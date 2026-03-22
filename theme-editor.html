@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nyx Theme Editor</title>
+  <link rel="icon" type="image/png" href="assets/icon-192.png">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --violet:#8b5cf6;--pink:#ec4899;
+      --gradient:linear-gradient(135deg,#8b5cf6,#ec4899);
+      --bg:#08080f;--panel:#12121e;--elevated:#1a1a2e;
+      --border:rgba(139,92,246,0.15);--text:#ede9ff;--muted:#9490b8;
+      --success:#22c55e;
+    }
+    body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;}
+    input,textarea,select{font-family:'Inter',sans-serif;}
+    button{cursor:pointer;font-family:'Inter',sans-serif;}
+
+    /* Header */
+    .header{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:10;}
+    .header-logo{width:36px;height:36px;border-radius:10px;background:var(--gradient);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;}
+    .header-title{font-size:17px;font-weight:800;letter-spacing:-0.3px;}
+    .header-sub{font-size:13px;color:var(--muted);}
+    .header-actions{margin-left:auto;display:flex;gap:8px;}
+    .btn{padding:9px 18px;border-radius:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;font-family:'Inter',sans-serif;}
+    .btn-primary{background:var(--gradient);color:#fff;box-shadow:0 4px 14px rgba(139,92,246,0.3);}
+    .btn-primary:hover{transform:translateY(-1px);}
+    .btn-secondary{background:rgba(139,92,246,0.1);color:var(--violet);border:1.5px solid rgba(139,92,246,0.2);}
+    .btn-secondary:hover{background:rgba(139,92,246,0.18);}
+    .btn-danger{background:rgba(239,68,68,0.1);color:#ef4444;border:1.5px solid rgba(239,68,68,0.2);}
+
+    /* Layout */
+    .editor-layout{display:flex;flex:1;overflow:hidden;}
+    .editor-panel{width:340px;min-width:340px;background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;padding:20px;}
+    .preview-panel{flex:1;display:flex;align-items:center;justify-content:center;padding:40px;background:var(--bg);}
+
+    /* Controls */
+    .section{margin-bottom:24px;}
+    .section-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;}
+    .control-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;}
+    .control-label{font-size:14px;font-weight:500;}
+    .control-sub{font-size:12px;color:var(--muted);margin-top:1px;}
+    
+    input[type="color"]{width:36px;height:36px;border-radius:8px;border:2px solid var(--border);cursor:pointer;background:none;padding:2px;}
+    input[type="range"]{accent-color:var(--violet);cursor:pointer;width:100%;}
+    select{background:var(--elevated);border:1.5px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--text);cursor:pointer;}
+    select:focus{outline:none;border-color:var(--violet);}
+    input[type="text"]{width:100%;background:var(--elevated);border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;color:var(--text);}
+    input[type="text"]:focus{outline:none;border-color:var(--violet);}
+
+    /* Gradient builder */
+    .gradient-stops{display:flex;gap:6px;flex-wrap:wrap;}
+    .gradient-stop{display:flex;align-items:center;gap:6px;background:var(--elevated);padding:6px 10px;border-radius:8px;border:1px solid var(--border);}
+    
+    /* Pattern grid */
+    .pattern-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+    .pattern-btn{height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;overflow:hidden;position:relative;}
+    .pattern-btn.active,.pattern-btn:hover{border-color:var(--violet);}
+    .pattern-btn-inner{width:100%;height:100%;background:var(--elevated);}
+
+    /* Preview phone */
+    .preview-phone{width:320px;height:580px;background:#0b0b16;border-radius:36px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(139,92,246,0.2);display:flex;flex-direction:column;position:relative;}
+    .preview-header{padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,0.07);}
+    .preview-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;}
+    .preview-name{font-size:14px;font-weight:700;color:#ede9ff;}
+    .preview-status{font-size:11px;color:#9490b8;}
+    .preview-messages{flex:1;padding:12px;overflow:hidden;display:flex;flex-direction:column;gap:8px;position:relative;}
+    .preview-bg{position:absolute;inset:0;}
+    .preview-msg{position:relative;z-index:1;max-width:70%;padding:8px 12px 6px;border-radius:14px;font-size:13px;line-height:1.4;}
+    .preview-msg.them{background:rgba(255,255,255,0.07);color:#ede9ff;border-radius:14px 14px 14px 4px;align-self:flex-start;}
+    .preview-msg.me{color:#fff;border-radius:14px 14px 4px 14px;align-self:flex-end;}
+    .preview-time{font-size:10px;opacity:0.6;text-align:right;margin-top:2px;}
+    .preview-input{padding:10px 12px;border-top:1px solid rgba(255,255,255,0.07);display:flex;gap:8px;align-items:center;}
+    .preview-input-box{flex:1;background:rgba(255,255,255,0.06);border-radius:16px;padding:7px 12px;font-size:12px;color:#9490b8;}
+    .preview-send{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;}
+
+    /* Theme library */
+    .theme-library{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;}
+    .theme-card{border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid transparent;transition:all 0.15s;aspect-ratio:1.5;}
+    .theme-card:hover,.theme-card.active{border-color:var(--violet);}
+    .theme-card-inner{width:100%;height:100%;position:relative;}
+    .theme-card-label{position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.5);}
+
+    /* Toast */
+    #te-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(15,10,30,0.95);color:#ede9ff;padding:11px 22px;border-radius:40px;font-size:14px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid rgba(139,92,246,0.2);display:none;z-index:9999;}
+
+    @media(max-width:700px){
+      .editor-panel{width:100%;min-width:unset;}
+      .preview-panel{display:none;}
+      .editor-layout{flex-direction:column;}
+    }
+  </style>
+</head>
+<body>
+<div id="te-toast"></div>
+
+<header class="header">
+  <div class="header-logo">N</div>
+  <div>
+    <div class="header-title">Nyx Theme Editor</div>
+    <div class="header-sub">Создай свою тему оформления</div>
+  </div>
+  <div class="header-actions">
+    <input type="file" id="load-theme-input" accept=".tnyx" hidden onchange="loadTheme(event)">
+    <button class="btn btn-secondary" onclick="document.getElementById('load-theme-input').click()">Загрузить .tnyx</button>
+    <button class="btn btn-primary" onclick="exportTheme()">Скачать .tnyx</button>
+    <button class="btn btn-secondary" onclick="openInNyx()">Открыть в Nyx</button>
+    <a href="index.html" class="btn btn-secondary" style="text-decoration:none;">← Назад</a>
+  </div>
+</header>
+
+<div class="editor-layout">
+  <!-- Controls -->
+  <aside class="editor-panel">
+
+    <!-- Theme name -->
+    <div class="section">
+      <div class="section-title">Название темы</div>
+      <input type="text" id="theme-name" value="Моя тема" placeholder="Название...">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+        <input type="text" id="theme-author" placeholder="Автор (необязательно)" style="flex:1;">
+        <select id="theme-base" onchange="updatePreview()">
+          <option value="dark">Тёмная основа</option>
+          <option value="light">Светлая основа</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Bubble colors -->
+    <div class="section">
+      <div class="section-title">Пузыри сообщений</div>
+      
+      <div style="margin-bottom:10px;">
+        <div class="control-label" style="margin-bottom:6px;">Мои сообщения</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+            <input type="radio" name="own-type" value="solid" onchange="toggleGradient('own',false)" checked style="accent-color:var(--violet)"> Цвет
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+            <input type="radio" name="own-type" value="gradient" onchange="toggleGradient('own',true)" style="accent-color:var(--violet)"> Градиент
+          </label>
+        </div>
+        <div id="own-solid-controls" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <input type="color" id="own-bubble-color" value="#8b5cf6" oninput="updatePreview()">
+          <span style="font-size:13px;color:var(--muted);">Фон пузыря</span>
+          <input type="color" id="own-text-color" value="#ffffff" oninput="updatePreview()">
+          <span style="font-size:13px;color:var(--muted);">Текст</span>
+        </div>
+        <div id="own-gradient-controls" style="display:none;gap:8px;margin-top:8px;align-items:center;">
+          <input type="color" id="own-grad-from" value="#8b5cf6" oninput="updatePreview()">
+          <span style="font-size:13px;color:var(--muted);">→</span>
+          <input type="color" id="own-grad-to" value="#ec4899" oninput="updatePreview()">
+          <select id="own-grad-dir" onchange="updatePreview()" style="font-size:12px;padding:5px 8px;">
+            <option value="135deg">↘ Диаг.</option>
+            <option value="90deg">→ Горизонт.</option>
+            <option value="180deg">↓ Вертикальный</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <div class="control-label" style="margin-bottom:6px;">Чужие сообщения</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <input type="color" id="them-bubble-color" value="#1e1e34" oninput="updatePreview()">
+          <span style="font-size:13px;color:var(--muted);">Фон</span>
+          <input type="color" id="them-text-color" value="#ede9ff" oninput="updatePreview()">
+          <span style="font-size:13px;color:var(--muted);">Текст</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat background -->
+    <div class="section">
+      <div class="section-title">Фон чата</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+          <input type="radio" name="bg-type" value="solid" onchange="updateBgControls('solid')" checked style="accent-color:var(--violet)"> Цвет
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+          <input type="radio" name="bg-type" value="gradient" onchange="updateBgControls('gradient')" style="accent-color:var(--violet)"> Градиент
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+          <input type="radio" name="bg-type" value="pattern" onchange="updateBgControls('pattern')" style="accent-color:var(--violet)"> Паттерн
+        </label>
+      </div>
+      <div id="bg-solid-ctrl" style="display:flex;align-items:center;gap:8px;">
+        <input type="color" id="chat-bg-color" value="#0b0b16" oninput="updatePreview()">
+        <span style="font-size:13px;color:var(--muted);">Цвет фона</span>
+      </div>
+      <div id="bg-gradient-ctrl" style="display:none;align-items:center;gap:8px;">
+        <input type="color" id="chat-bg-from" value="#0b0b16" oninput="updatePreview()">
+        <span style="font-size:13px;color:var(--muted);">→</span>
+        <input type="color" id="chat-bg-to" value="#1a0a3a" oninput="updatePreview()">
+        <select id="chat-bg-dir" onchange="updatePreview()" style="font-size:12px;padding:5px 8px;">
+          <option value="135deg">↘</option><option value="180deg">↓</option><option value="90deg">→</option>
+        </select>
+      </div>
+      <div id="bg-pattern-ctrl" style="display:none;">
+        <div class="pattern-grid" id="pattern-grid"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <input type="color" id="pattern-color" value="rgba(139,92,246,0.08)" oninput="updatePreview()">
+          <span style="font-size:13px;color:var(--muted);">Цвет паттерна</span>
+          <input type="range" id="pattern-opacity" min="1" max="30" value="8" oninput="updatePreview()" style="width:80px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Accent colors -->
+    <div class="section">
+      <div class="section-title">Акцентные цвета</div>
+      <div class="control-row">
+        <div><div class="control-label">Основной акцент</div><div class="control-sub">Кнопки, ссылки, выделение</div></div>
+        <input type="color" id="accent-color" value="#8b5cf6" oninput="updatePreview()">
+      </div>
+      <div class="control-row">
+        <div><div class="control-label">Вторичный акцент</div></div>
+        <input type="color" id="accent2-color" value="#ec4899" oninput="updatePreview()">
+      </div>
+    </div>
+
+    <!-- Typography -->
+    <div class="section">
+      <div class="section-title">Типографика</div>
+      <div class="control-row">
+        <div class="control-label">Шрифт</div>
+        <select id="font-family" onchange="updatePreview()">
+          <option value="Inter">Inter</option>
+          <option value="system-ui">System UI</option>
+          <option value="'JetBrains Mono'">JetBrains Mono</option>
+          <option value="Georgia">Georgia (Serif)</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <div class="control-label">Размер текста</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="range" id="font-size" min="12" max="18" value="15" oninput="updateFontSize(this.value)">
+          <span id="font-size-label" style="font-size:12px;color:var(--muted);min-width:28px;">15px</span>
+        </div>
+      </div>
+      <div class="control-row">
+        <div class="control-label">Радиус пузырей</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="range" id="bubble-radius" min="4" max="24" value="18" oninput="updatePreview()">
+          <span id="radius-label" style="font-size:12px;color:var(--muted);min-width:28px;">18px</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <div class="section">
+      <div class="section-title">Хедер чата</div>
+      <div class="control-row">
+        <div class="control-label">Фон хедера</div>
+        <input type="color" id="header-color" value="#0f0f1c" oninput="updatePreview()">
+      </div>
+      <div class="control-row">
+        <div class="control-label">Blur-эффект</div>
+        <input type="checkbox" id="header-blur" checked onchange="updatePreview()" style="accent-color:var(--violet);width:18px;height:18px;cursor:pointer;">
+      </div>
+    </div>
+
+
+    <!-- Background image -->
+    <div class="section">
+      <div class="section-title">Фоновое изображение</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <label style="display:flex;align-items:center;justify-content:center;height:80px;border:2px dashed var(--border);border-radius:var(--r-md);cursor:pointer;font-size:13px;color:var(--muted);transition:all 0.15s;gap:8px;"
+          id="bg-image-label" onmouseover="this.style.borderColor='var(--violet)'" onmouseout="this.style.borderColor='var(--border)'">
+          <input type="file" id="bg-image-input" accept="image/*" hidden onchange="loadBgImage(event)">
+          <span id="bg-image-status">+ Загрузить картинку</span>
+        </label>
+        <div style="display:flex;gap:8px;">
+          <div class="control-row" style="flex:1;margin-bottom:0;">
+            <div><div class="control-label" style="font-size:12px;">Прозрачность</div></div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="range" id="bg-image-opacity" min="10" max="100" value="60" oninput="updatePreview();document.getElementById('bg-img-opacity-val').textContent=this.value+'%'">
+              <span id="bg-img-opacity-val" style="font-size:11px;color:var(--muted);min-width:32px;">60%</span>
+            </div>
+          </div>
+          <button onclick="clearBgImage()" style="padding:6px 10px;font-size:12px;background:rgba(239,68,68,0.1);color:#ef4444;border:none;border-radius:6px;cursor:pointer;flex-shrink:0;">✕ Убрать</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);">Картинка сохраняется в base64 внутри .tnyx файла</div>
+      </div>
+    </div>
+
+    <!-- Animations & Effects -->
+    <div class="section">
+      <div class="section-title">Анимации и эффекты</div>
+      
+      <div class="control-row">
+        <div><div class="control-label">Анимация сообщений</div><div class="control-sub">Эффект появления пузырей</div></div>
+        <select id="msg-animation" onchange="updatePreview()" style="font-size:12px;">
+          <option value="bounce">Bounce (отскок)</option>
+          <option value="slide">Slide (сбоку)</option>
+          <option value="fade">Fade (плавно)</option>
+          <option value="scale">Scale (масштаб)</option>
+          <option value="none">Без анимации</option>
+        </select>
+      </div>
+
+      <div class="control-row">
+        <div><div class="control-label">Скорость анимации</div></div>
+        <select id="anim-speed" onchange="updatePreview()" style="font-size:12px;">
+          <option value="fast">Быстро (150ms)</option>
+          <option value="normal" selected>Нормально (250ms)</option>
+          <option value="slow">Медленно (400ms)</option>
+        </select>
+      </div>
+
+      <div class="control-row">
+        <div><div class="control-label">Blur-эффект хедера</div><div class="control-sub">Размытие за прозрачным хедером</div></div>
+        <label style="position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;">
+          <input type="checkbox" id="header-blur-effect" checked onchange="updatePreview()" style="opacity:0;width:0;height:0;">
+          <span id="blur-track" style="position:absolute;inset:0;border-radius:22px;background:var(--violet);transition:0.2s;"></span>
+          <span id="blur-thumb" style="position:absolute;top:3px;left:20px;width:16px;height:16px;border-radius:50%;background:#fff;transition:0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></span>
+        </label>
+      </div>
+
+      <div class="control-row">
+        <div><div class="control-label">Aurora-фон сайдбара</div><div class="control-sub">Анимированное свечение</div></div>
+        <label style="position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;">
+          <input type="checkbox" id="aurora-effect" onchange="updatePreview()" style="opacity:0;width:0;height:0;">
+          <span id="aurora-track" style="position:absolute;inset:0;border-radius:22px;background:var(--border);transition:0.2s;"></span>
+          <span id="aurora-thumb" style="position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></span>
+        </label>
+      </div>
+
+      <div class="control-row">
+        <div><div class="control-label">Тень пузырей</div></div>
+        <select id="bubble-shadow" onchange="updatePreview()" style="font-size:12px;">
+          <option value="none">Без тени</option>
+          <option value="sm" selected>Мягкая</option>
+          <option value="md">Средняя</option>
+          <option value="glow">Glow (свечение)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Preset themes -->
+    <div class="section">
+      <div class="section-title">Готовые пресеты</div>
+      <div class="theme-library" id="preset-library"></div>
+    </div>
+
+  </aside>
+
+  <!-- Preview -->
+  <div class="preview-panel">
+    <div>
+      <div style="text-align:center;margin-bottom:16px;font-size:13px;color:var(--muted);">Предпросмотр</div>
+      <div class="preview-phone" id="preview-phone">
+        <div class="preview-header" id="preview-header">
+          <div class="preview-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">
+            <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;">A</div>
+          </div>
+          <div>
+            <div class="preview-name">Алекс</div>
+            <div class="preview-status" style="color:#22c55e;">онлайн</div>
+          </div>
+        </div>
+        <div class="preview-messages" id="preview-messages">
+          <div class="preview-bg" id="preview-bg"></div>
+          <div class="preview-msg them" id="pm-them1">Привет! Как дела? 👋</div>
+          <div class="preview-msg them" id="pm-them2">Смотрел новый дизайн Nyx?</div>
+          <div class="preview-msg me" id="pm-me1">Да, выглядит огонь!<div class="preview-time">11:24 ✓✓</div></div>
+          <div class="preview-msg me" id="pm-me2">Именно поэтому делаю свою тему 😎<div class="preview-time">11:24 ✓✓</div></div>
+        </div>
+        <div class="preview-input" id="preview-input">
+          <div class="preview-input-box">Сообщение...</div>
+          <div class="preview-send" id="preview-send">→</div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:12px;font-size:12px;color:var(--muted);" id="theme-name-display">Моя тема</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- State ----
+const PATTERNS = [
+  { id:'none', label:'Нет', bg:'var(--elevated)' },
+  { id:'dots', label:'Точки', fn: (c,o) => `radial-gradient(circle,${c} 1px,transparent 1px)`, size:'24px 24px' },
+  { id:'grid', label:'Сетка', fn: (c,o) => `linear-gradient(${c} 1px,transparent 1px),linear-gradient(90deg,${c} 1px,transparent 1px)`, size:'24px 24px' },
+  { id:'diagonal', label:'Диаг.', fn: (c,o) => `repeating-linear-gradient(45deg,${c},${c} 1px,transparent 1px,transparent 14px)`, size:'auto' },
+  { id:'waves', label:'Волны', fn: (c,o) => `repeating-radial-gradient(circle at 50% 50%,transparent 10px,${c} 10px,${c} 11px,transparent 11px)`, size:'40px 40px' },
+  { id:'hexagons', label:'Звёзды', fn: (c,o) => `radial-gradient(circle at 25% 25%,${c} 2px,transparent 2px),radial-gradient(circle at 75% 75%,${c} 2px,transparent 2px)`, size:'20px 20px' },
+  { id:'mesh', label:'Сетка2', fn: (c,o) => `linear-gradient(${c} 2px,transparent 2px),linear-gradient(90deg,${c} 2px,transparent 2px)`, size:'40px 40px' },
+  { id:'circles', label:'Круги', fn: (c,o) => `radial-gradient(circle,transparent 8px,${c} 8px,${c} 9px,transparent 9px)`, size:'24px 24px' },
+];
+
+const PRESETS = [
+  { name:'Cosmic', ownFrom:'#8b5cf6',ownTo:'#ec4899',ownType:'gradient',bgColor:'#0b0b16',patternId:'dots',accent:'#8b5cf6',accent2:'#ec4899' },
+  { name:'Ocean', ownFrom:'#3b82f6',ownTo:'#06b6d4',ownType:'gradient',bgColor:'#071520',patternId:'none',accent:'#3b82f6',accent2:'#06b6d4' },
+  { name:'Forest', ownFrom:'#22c55e',ownTo:'#16a34a',ownType:'gradient',bgColor:'#071510',patternId:'dots',accent:'#22c55e',accent2:'#16a34a' },
+  { name:'Sunset', ownFrom:'#f59e0b',ownTo:'#ef4444',ownType:'gradient',bgColor:'#150a00',patternId:'none',accent:'#f59e0b',accent2:'#ef4444' },
+  { name:'Rose', ownFrom:'#f43f5e',ownTo:'#fb923c',ownType:'gradient',bgColor:'#15060a',patternId:'none',accent:'#f43f5e',accent2:'#fb923c' },
+  { name:'Midnight', ownColor:'#4338ca',ownType:'solid',bgColor:'#07071a',patternId:'grid',accent:'#6366f1',accent2:'#4338ca' },
+];
+
+let currentPattern = 'none';
+let bgType = 'solid';
+
+
+let bgImageBase64 = null;
+
+function loadBgImage(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { alert('Файл слишком большой (макс 2MB)'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    bgImageBase64 = e.target.result;
+    document.getElementById('bg-image-status').textContent = '✓ ' + file.name;
+    document.getElementById('bg-image-label').style.borderColor = 'var(--violet)';
+    document.getElementById('bg-image-label').style.background = 'rgba(139,92,246,0.06)';
+    updatePreview();
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearBgImage() {
+  bgImageBase64 = null;
+  document.getElementById('bg-image-status').textContent = '+ Загрузить картинку';
+  document.getElementById('bg-image-label').style.borderColor = 'var(--border)';
+  document.getElementById('bg-image-label').style.background = '';
+  document.getElementById('bg-image-input').value = '';
+  updatePreview();
+}
+
+function initAnimToggles() {
+  const setupToggle = (checkId, trackId, thumbId) => {
+    const check = document.getElementById(checkId);
+    const track = document.getElementById(trackId);
+    const thumb = document.getElementById(thumbId);
+    if (!check || !track || !thumb) return;
+    check.onchange = () => {
+      track.style.background = check.checked ? 'var(--violet)' : 'var(--border)';
+      thumb.style.left = check.checked ? '20px' : '3px';
+      updatePreview();
+    };
+    // init
+    track.style.background = check.checked ? 'var(--violet)' : 'var(--border)';
+    thumb.style.left = check.checked ? '20px' : '3px';
+  };
+  setupToggle('header-blur-effect', 'blur-track', 'blur-thumb');
+  setupToggle('aurora-effect', 'aurora-track', 'aurora-thumb');
+}
+
+// ---- Init ----
+function init() {
+  buildPatternGrid();
+  buildPresets();
+  updatePreview();
+  initAnimToggles();
+  document.getElementById('theme-name').addEventListener('input', () => {
+    document.getElementById('theme-name-display').textContent = document.getElementById('theme-name').value || 'Без названия';
+    updatePreview();
+  });
+  document.getElementById('bubble-radius').addEventListener('input', e => {
+    document.getElementById('radius-label').textContent = e.target.value + 'px';
+    updatePreview();
+  });
+}
+
+function buildPatternGrid() {
+  const grid = document.getElementById('pattern-grid');
+  PATTERNS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'pattern-btn' + (p.id === 'none' ? ' active' : '');
+    btn.title = p.label;
+    btn.innerHTML = `<div class="pattern-btn-inner" style="${p.id !== 'none' && p.fn ? getPatternStyle(p, 'rgba(139,92,246,0.3)') : ''}"></div><div style="position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:9px;color:var(--muted);">${p.label}</div>`;
+    btn.onclick = () => {
+      document.querySelectorAll('.pattern-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPattern = p.id;
+      updatePreview();
+    };
+    grid.appendChild(btn);
+  });
+}
+
+function getPatternStyle(p, color) {
+  if (!p.fn) return '';
+  const bg = p.fn(color, 0.1);
+  return `background-image:${bg};background-size:${p.size || '24px 24px'};`;
+}
+
+function buildPresets() {
+  const lib = document.getElementById('preset-library');
+  PRESETS.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'theme-card';
+    const gradient = p.ownType === 'gradient' ? `linear-gradient(135deg,${p.ownFrom},${p.ownTo})` : p.ownColor;
+    card.innerHTML = `
+      <div class="theme-card-inner" style="background:${p.bgColor};">
+        <div style="position:absolute;bottom:8px;right:8px;width:40%;height:35%;border-radius:10px 10px 3px 10px;background:${gradient};"></div>
+        <div style="position:absolute;top:8px;left:8px;width:40%;height:25%;border-radius:10px 10px 10px 3px;background:rgba(255,255,255,0.08);"></div>
+        <div class="theme-card-label">${p.name}</div>
+      </div>`;
+    card.onclick = () => applyPreset(p);
+    lib.appendChild(card);
+  });
+}
+
+function applyPreset(p) {
+  if (p.ownType === 'gradient') {
+    document.querySelector('input[name="own-type"][value="gradient"]').checked = true;
+    toggleGradient('own', true);
+    document.getElementById('own-grad-from').value = p.ownFrom;
+    document.getElementById('own-grad-to').value = p.ownTo;
+  } else {
+    document.querySelector('input[name="own-type"][value="solid"]').checked = true;
+    toggleGradient('own', false);
+    document.getElementById('own-bubble-color').value = p.ownColor;
+  }
+  document.getElementById('chat-bg-color').value = p.bgColor;
+  document.getElementById('accent-color').value = p.accent;
+  document.getElementById('accent2-color').value = p.accent2;
+  bgType = 'solid';
+  document.querySelector('input[name="bg-type"][value="solid"]').checked = true;
+  updateBgControls('solid');
+  if (p.patternId && p.patternId !== 'none') {
+    bgType = 'pattern';
+    document.querySelector('input[name="bg-type"][value="pattern"]').checked = true;
+    updateBgControls('pattern');
+    currentPattern = p.patternId;
+    document.querySelectorAll('.pattern-btn').forEach((b, i) => {
+      b.classList.toggle('active', PATTERNS[i].id === p.patternId);
+    });
+  }
+  updatePreview();
+}
+
+function toggleGradient(which, isGrad) {
+  document.getElementById(`${which}-solid-controls`).style.display = isGrad ? 'none' : 'flex';
+  document.getElementById(`${which}-gradient-controls`).style.display = isGrad ? 'flex' : 'none';
+  updatePreview();
+}
+
+function updateBgControls(type) {
+  bgType = type;
+  document.getElementById('bg-solid-ctrl').style.display = type === 'solid' ? 'flex' : 'none';
+  document.getElementById('bg-gradient-ctrl').style.display = type === 'gradient' ? 'flex' : 'none';
+  document.getElementById('bg-pattern-ctrl').style.display = type === 'pattern' ? 'block' : 'none';
+  updatePreview();
+}
+
+function updateFontSize(val) {
+  document.getElementById('font-size-label').textContent = val + 'px';
+  updatePreview();
+}
+
+// ---- Get current theme object ----
+function getTheme() {
+  const ownIsGrad = document.querySelector('input[name="own-type"]:checked').value === 'gradient';
+  const patternObj = PATTERNS.find(p => p.id === currentPattern) || PATTERNS[0];
+  const patternColor = document.getElementById('pattern-color')?.value || 'rgba(139,92,246,0.1)';
+  
+  return {
+    version: '1.0',
+    name: document.getElementById('theme-name').value || 'Без названия',
+    author: document.getElementById('theme-author').value || '',
+    base: document.getElementById('theme-base').value,
+    bubbles: {
+      own: {
+        type: ownIsGrad ? 'gradient' : 'solid',
+        color: document.getElementById('own-bubble-color').value,
+        gradFrom: document.getElementById('own-grad-from').value,
+        gradTo: document.getElementById('own-grad-to').value,
+        gradDir: document.getElementById('own-grad-dir').value,
+        textColor: document.getElementById('own-text-color').value,
+      },
+      them: {
+        color: document.getElementById('them-bubble-color').value,
+        textColor: document.getElementById('them-text-color').value,
+      },
+    },
+    chatBg: {
+      type: bgType,
+      color: document.getElementById('chat-bg-color').value,
+      gradFrom: document.getElementById('chat-bg-from').value,
+      gradTo: document.getElementById('chat-bg-to').value,
+      gradDir: document.getElementById('chat-bg-dir').value,
+      patternId: currentPattern,
+      patternColor,
+      patternOpacity: document.getElementById('pattern-opacity').value,
+    },
+    accent: document.getElementById('accent-color').value,
+    accent2: document.getElementById('accent2-color').value,
+    font: document.getElementById('font-family').value,
+    fontSize: document.getElementById('font-size').value,
+    bubbleRadius: document.getElementById('bubble-radius').value,
+    header: {
+      color: document.getElementById('header-color').value,
+      blur: document.getElementById('header-blur').checked,
+    },
+    animations: {
+      msgAnimation: document.getElementById('msg-animation')?.value || 'bounce',
+      speed: document.getElementById('anim-speed')?.value || 'normal',
+      headerBlur: document.getElementById('header-blur-effect')?.checked !== false,
+      aurora: document.getElementById('aurora-effect')?.checked || false,
+      bubbleShadow: document.getElementById('bubble-shadow')?.value || 'sm',
+    },
+    bgImage: bgImageBase64 || null,
+    bgImageOpacity: document.getElementById('bg-image-opacity')?.value || 60,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// ---- Update preview ----
+function updatePreview() {
+  const t = getTheme();
+  const phone = document.getElementById('preview-phone');
+  
+  // Own bubble style
+  const ownBg = t.bubbles.own.type === 'gradient'
+    ? `linear-gradient(${t.bubbles.own.gradDir}, ${t.bubbles.own.gradFrom}, ${t.bubbles.own.gradTo})`
+    : t.bubbles.own.color;
+  
+  // Chat background
+  let chatBg = '';
+  const pc = document.getElementById('pattern-color')?.value || 'rgba(139,92,246,0.1)';
+  if (t.chatBg.type === 'solid') {
+    chatBg = t.chatBg.color;
+  } else if (t.chatBg.type === 'gradient') {
+    chatBg = `linear-gradient(${t.chatBg.gradDir}, ${t.chatBg.gradFrom}, ${t.chatBg.gradTo})`;
+  } else {
+    chatBg = t.chatBg.color;
+  }
+  
+  const bg = document.getElementById('preview-bg');
+  bg.style.background = chatBg;
+  // Background image overlay
+  if (bgImageBase64) {
+    const opacity = (document.getElementById('bg-image-opacity')?.value || 60) / 100;
+    bg.style.backgroundImage = '';
+    bg.style.setProperty('--bg-img', `url(${bgImageBase64})`);
+    // Add a pseudo-overlay via additional element
+    let imgOverlay = document.getElementById('preview-bg-img');
+    if (!imgOverlay) {
+      imgOverlay = document.createElement('div');
+      imgOverlay.id = 'preview-bg-img';
+      imgOverlay.style.cssText = 'position:absolute;inset:0;background-size:cover;background-position:center;';
+      bg.after(imgOverlay);
+    }
+    imgOverlay.style.backgroundImage = `url(${bgImageBase64})`;
+    imgOverlay.style.opacity = opacity;
+  } else {
+    const old = document.getElementById('preview-bg-img');
+    if (old) old.remove();
+  }
+  
+  // Pattern overlay
+  if (t.chatBg.type === 'pattern' && currentPattern !== 'none') {
+    const patObj = PATTERNS.find(p => p.id === currentPattern);
+    if (patObj?.fn) {
+      const op = t.chatBg.patternOpacity / 100;
+      bg.style.backgroundImage = patObj.fn(pc, op);
+      bg.style.backgroundSize = patObj.size || '24px 24px';
+    }
+  } else {
+    bg.style.backgroundImage = '';
+  }
+  
+  // Bubbles
+  ['pm-me1','pm-me2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.background = ownBg;
+      el.style.color = t.bubbles.own.textColor;
+      el.style.borderRadius = `${t.bubbleRadius}px ${t.bubbleRadius}px 4px ${t.bubbleRadius}px`;
+    }
+  });
+  ['pm-them1','pm-them2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.background = t.bubbles.them.color;
+      el.style.color = t.bubbles.them.textColor;
+      el.style.borderRadius = `${t.bubbleRadius}px ${t.bubbleRadius}px ${t.bubbleRadius}px 4px`;
+    }
+  });
+  
+  // Animation class
+  const animMap = { bounce:'msgIn', slide:'msgSlide', fade:'msgFade', scale:'msgScale', none:'' };
+  const anim = document.getElementById('msg-animation')?.value || 'bounce';
+  const speed = { fast:'150ms', normal:'250ms', slow:'400ms' }[document.getElementById('anim-speed')?.value || 'normal'];
+  const animStyle = document.getElementById('preview-anim-style') || document.createElement('style');
+  animStyle.id = 'preview-anim-style';
+  animStyle.textContent = `
+    @keyframes msgIn { from{opacity:0;transform:scale(0.82) translateY(10px)} to{opacity:1;transform:none} }
+    @keyframes msgSlide { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:none} }
+    @keyframes msgFade { from{opacity:0} to{opacity:1} }
+    @keyframes msgScale { from{opacity:0;transform:scale(0.7)} to{opacity:1;transform:none} }
+    .preview-msg { animation: ${animStyle.textContent.includes(animMap[anim]) || anim === 'none' ? 'none' : (animMap[anim] + ' ' + speed + ' ease')}; }
+  `;
+  document.head.appendChild(animStyle);
+
+  // Bubble shadow
+  const shadowMap = { none:'none', sm:'0 1px 4px rgba(0,0,0,0.12)', md:'0 3px 12px rgba(0,0,0,0.22)', glow:`0 0 16px ${t.bubbles?.own?.gradFrom || '#8b5cf6'}55` };
+  const shadow = shadowMap[document.getElementById('bubble-shadow')?.value || 'sm'];
+  document.querySelectorAll('.preview-msg.me').forEach(el => el.style.boxShadow = shadow);
+
+  // Font
+  phone.style.fontFamily = t.font;
+  document.querySelectorAll('.preview-msg').forEach(el => el.style.fontSize = t.fontSize + 'px');
+  
+  // Header
+  const header = document.getElementById('preview-header');
+  header.style.background = t.header.blur ? `${t.header.color}cc` : t.header.color;
+  header.style.backdropFilter = t.header.blur ? 'blur(12px)' : 'none';
+  
+  // Send button
+  const sendBtn = document.getElementById('preview-send');
+  sendBtn.style.background = ownBg;
+  sendBtn.style.color = t.bubbles.own.textColor;
+}
+
+// ---- Export .tnyx ----
+function exportTheme() {
+  const t = getTheme();
+  const json = JSON.stringify(t, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (t.name.replace(/[^a-zа-яё0-9_-]/gi,'_') || 'theme') + '.tnyx';
+  a.click();
+  toast('Тема сохранена!');
+}
+
+// ---- Load .tnyx ----
+function loadTheme(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const t = JSON.parse(e.target.result);
+      applyThemeObject(t);
+      toast('Тема загружена: ' + (t.name || 'без названия'));
+    } catch { toast('Ошибка: неверный формат файла'); }
+  };
+  reader.readAsText(file);
+}
+
+function applyThemeObject(t) {
+  if (t.name) { document.getElementById('theme-name').value = t.name; document.getElementById('theme-name-display').textContent = t.name; }
+  if (t.author) document.getElementById('theme-author').value = t.author;
+  if (t.base) document.getElementById('theme-base').value = t.base;
+  if (t.bubbles?.own) {
+    const o = t.bubbles.own;
+    if (o.type === 'gradient') { document.querySelector('input[name="own-type"][value="gradient"]').checked = true; toggleGradient('own',true); }
+    else { document.querySelector('input[name="own-type"][value="solid"]').checked = true; toggleGradient('own',false); }
+    if (o.color) document.getElementById('own-bubble-color').value = o.color;
+    if (o.gradFrom) document.getElementById('own-grad-from').value = o.gradFrom;
+    if (o.gradTo) document.getElementById('own-grad-to').value = o.gradTo;
+    if (o.textColor) document.getElementById('own-text-color').value = o.textColor;
+  }
+  if (t.bubbles?.them) {
+    if (t.bubbles.them.color) document.getElementById('them-bubble-color').value = t.bubbles.them.color;
+    if (t.bubbles.them.textColor) document.getElementById('them-text-color').value = t.bubbles.them.textColor;
+  }
+  if (t.chatBg) {
+    const bg = t.chatBg;
+    bgType = bg.type || 'solid';
+    document.querySelector(`input[name="bg-type"][value="${bgType}"]`).checked = true;
+    updateBgControls(bgType);
+    if (bg.color) document.getElementById('chat-bg-color').value = bg.color;
+    if (bg.gradFrom) document.getElementById('chat-bg-from').value = bg.gradFrom;
+    if (bg.gradTo) document.getElementById('chat-bg-to').value = bg.gradTo;
+    if (bg.patternId) {
+      currentPattern = bg.patternId;
+      document.querySelectorAll('.pattern-btn').forEach((b, i) => b.classList.toggle('active', PATTERNS[i].id === bg.patternId));
+    }
+  }
+  if (t.accent) document.getElementById('accent-color').value = t.accent;
+  if (t.accent2) document.getElementById('accent2-color').value = t.accent2;
+  if (t.font) document.getElementById('font-family').value = t.font;
+  if (t.fontSize) { document.getElementById('font-size').value = t.fontSize; document.getElementById('font-size-label').textContent = t.fontSize + 'px'; }
+  if (t.bubbleRadius) { document.getElementById('bubble-radius').value = t.bubbleRadius; document.getElementById('radius-label').textContent = t.bubbleRadius + 'px'; }
+  if (t.header) { if (t.header.color) document.getElementById('header-color').value = t.header.color; if (t.header.blur !== undefined) document.getElementById('header-blur').checked = t.header.blur; }
+  updatePreview();
+}
+
+// ---- Open in Nyx ----
+function openInNyx() {
+  const t = getTheme();
+  const json = JSON.stringify(t);
+  const encoded = btoa(encodeURIComponent(json));
+  const url = 'index.html?applytheme=' + encoded;
+  window.open(url, '_blank');
+}
+
+function toast(msg) {
+  const el = document.getElementById('te-toast');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -7,24 +7,62 @@ const Chats = {
   allChats: [],
   filteredChats: [],
 
+
+  // Build unread increments for all chat members except current user
+  _buildUnreadIncrements(chatId) {
+    const myUid = window.AppState.currentUser.uid;
+    const chat = this.allChats.find(c => c.id === chatId);
+    const updates = {};
+    (chat?.members || []).forEach(uid => {
+      if (uid !== myUid) updates[`unreadCount.${uid}`] = firebase.firestore.FieldValue.increment(1);
+    });
+    return updates;
+  },
+
   // ---- Subscribe to chat list ----
   subscribeChatList() {
     const uid = window.AppState.currentUser.uid;
 
+    // ВАЖНО: НЕ используем orderBy + where вместе — это требует составного индекса
+    // и пропускает чаты с lastMessage=null. Только where, сортируем на клиенте.
     const unsubscribe = db.collection('chats')
       .where('members', 'array-contains', uid)
-      .orderBy('lastMessage.timestamp', 'desc')
       .onSnapshot(snap => {
-        this.allChats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+        this.allChats = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(chat => {
+            // Hide deleted groups older than 2 weeks
+            if (chat.deletedAt) {
+              const deletedMs = chat.deletedAt.toMillis ? chat.deletedAt.toMillis() : 0;
+              return deletedMs > twoWeeksAgo;
+            }
+            // Hide if no longer a member (safety check)
+            if (!chat.members || !chat.members.includes(uid)) return false;
+            return true;
+          })
+          .sort((a, b) => {
+            const getTime = (chat) => {
+              if (chat.lastMessage?.timestamp?.toMillis) return chat.lastMessage.timestamp.toMillis();
+              if (chat.lastMessage?.timestamp?.seconds) return chat.lastMessage.timestamp.seconds * 1000;
+              if (chat.createdAt?.toMillis) return chat.createdAt.toMillis();
+              if (chat.createdAt?.seconds) return chat.createdAt.seconds * 1000;
+              return 0;
+            };
+            return getTime(b) - getTime(a);
+          });
         this.renderChatList(this.allChats);
         this.updateTotalUnread();
-      }, err => { console.warn('Chat list error:', err); });
+      }, err => {
+        console.error('Chat list error:', err);
+        Utils.toast('Ошибка загрузки чатов: ' + err.message, 'error');
+      });
 
     window.AppState.unsubscribers['chatList'] = unsubscribe;
   },
 
   renderChatList(chats) {
-    const container = document.getElementById('chat-list');
+    const container = document.getElementById('chat-list-panel');
     const myUid = window.AppState.currentUser.uid;
 
     if (!chats || !chats.length) {
@@ -174,6 +212,10 @@ const Chats = {
     // Load pinned message
     this.updatePinnedMessage(window.AppState.currentChatData);
 
+
+    // Apply chat theme
+    Themes.loadForChat(window.AppState.currentChatData);
+
     // Subscribe to messages
     Messages.subscribeToMessages(chatId);
 
@@ -243,25 +285,44 @@ const Chats = {
   },
 
   // ---- Create DM ----
-  async openOrCreateDM(targetUid, targetData) {
+  async openOrCreateDM(targetUid, targetData, fromQR = false) {
     const myUid = window.AppState.currentUser.uid;
     const chatId = Utils.getDmChatId(myUid, targetUid);
 
-    const existing = await db.collection('chats').doc(chatId).get();
-    if (!existing.exists) {
-      const myData = window.AppState.currentUserData;
-      await db.collection('chats').doc(chatId).set({
-        type: 'dm',
-        members: [myUid, targetUid],
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdBy: myUid,
-        lastMessage: null,
-        unreadCount: { [myUid]: 0, [targetUid]: 0 },
-      });
-    }
+    try {
+      const existing = await db.collection('chats').doc(chatId).get();
+      const isNew = !existing.exists;
+      if (isNew) {
+        await db.collection('chats').doc(chatId).set({
+          type: 'dm',
+          members: [myUid, targetUid],
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: myUid,
+          lastMessage: null,
+          unreadCount: { [myUid]: 0, [targetUid]: 0 },
+        });
+      }
 
-    App.closeModal('new-chat-modal');
-    await this.openChat(chatId);
+      App.closeModal('new-chat-modal');
+      await this.openChat(chatId);
+
+      // If opened via QR and it's a new chat, pre-fill greeting message
+      if (fromQR && isNew) {
+        const settings = window.AppState.userSettings || {};
+        const greeting = settings.greetingMessage || 'Привет! Нашёл тебя в Nyx 👋';
+        const input = document.getElementById('message-input');
+        if (input && greeting) {
+          input.value = greeting;
+          input.style.height = 'auto';
+          input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+          Messages.updateSendBtn();
+          input.focus();
+        }
+      }
+    } catch (e) {
+      Utils.toast('Ошибка создания чата: ' + e.message, 'error');
+      console.error('openOrCreateDM error:', e);
+    }
   },
 
   // ---- Create Group ----
@@ -270,46 +331,54 @@ const Chats = {
     if (!name.trim()) { Utils.toast('Введи название группы', 'error'); return; }
     if (memberUids.length < 1) { Utils.toast('Добавь хотя бы одного участника', 'error'); return; }
 
-    const allMembers = [myUid, ...memberUids];
-    const unreadCount = {};
-    allMembers.forEach(uid => { unreadCount[uid] = 0; });
-    const memberRoles = {};
-    allMembers.forEach(uid => { memberRoles[uid] = uid === myUid ? 'owner' : 'member'; });
+    const btn = document.getElementById('create-group-btn');
+    btn.textContent = 'Создаём...';
+    btn.disabled = true;
 
-    const chatRef = db.collection('chats').doc();
+    try {
+      const allMembers = [myUid, ...memberUids];
+      const unreadCount = {};
+      allMembers.forEach(uid => { unreadCount[uid] = 0; });
+      const memberRoles = {};
+      allMembers.forEach(uid => { memberRoles[uid] = uid === myUid ? 'owner' : 'member'; });
 
-    let photoURL = null;
-    if (avatarFile) {
-      try {
-        photoURL = await Upload.uploadImage(avatarFile);
-      } catch {}
+      const chatRef = db.collection('chats').doc();
+
+      let photoURL = null;
+      if (avatarFile) {
+        try { photoURL = await Upload.uploadImage(avatarFile); } catch {}
+      }
+
+      await chatRef.set({
+        type: 'group',
+        name: name.trim(),
+        photoURL,
+        members: allMembers,
+        memberRoles,
+        inviteCode: Utils.generateId(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: myUid,
+        lastMessage: null,
+        unreadCount,
+        pinnedMessage: null,
+      });
+
+      await chatRef.collection('messages').add({
+        type: 'system',
+        text: `${window.AppState.currentUserData.displayName} создал(а) группу «${name.trim()}»`,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        senderId: window.AppState.currentUser.uid,
+      });
+
+      App.closeModal('new-chat-modal');
+      await this.openChat(chatRef.id);
+      Utils.toast('Группа создана!', 'success');
+    } catch (e) {
+      Utils.toast('Ошибка создания группы: ' + e.message, 'error');
+      console.error('createGroup error:', e);
+      btn.textContent = 'Создать группу';
+      btn.disabled = false;
     }
-
-    await chatRef.set({
-      type: 'group',
-      name: name.trim(),
-      photoURL,
-      members: allMembers,
-      memberRoles,
-      inviteCode: Utils.generateId(),
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      createdBy: myUid,
-      lastMessage: null,
-      unreadCount,
-      pinnedMessage: null,
-    });
-
-    // System message
-    await chatRef.collection('messages').add({
-      type: 'system',
-      text: `${window.AppState.currentUserData.displayName} создал(а) группу «${name.trim()}»`,
-      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      senderId: null,
-    });
-
-    App.closeModal('new-chat-modal');
-    await this.openChat(chatRef.id);
-    Utils.toast('Группа создана!', 'success');
   },
 
   // ---- Chat Info Modal ----
@@ -357,21 +426,26 @@ const Chats = {
       avatarSection.appendChild(avatarWrap);
 
       if (canManage) {
+        const nameWrap = document.createElement('div');
+        nameWrap.style.cssText = 'width:100%;display:flex;gap:8px;align-items:center;margin-top:4px;';
         const nameInput = document.createElement('input');
-        nameInput.type = 'text'; nameInput.className = 'input-field'; nameInput.value = chat.name || '';
+        nameInput.type = 'text'; nameInput.className = 'input-field';
+        nameInput.style.flex = '1';
+        nameInput.value = chat.name || '';
         nameInput.placeholder = 'Название группы';
         const saveNameBtn = document.createElement('button');
-        saveNameBtn.className = 'btn btn-secondary'; saveNameBtn.style.cssText = 'width:auto;padding:6px 14px;font-size:13px;';
-        saveNameBtn.textContent = 'Сохранить название';
+        saveNameBtn.style.cssText = 'padding:11px 16px;background:var(--gradient);color:#fff;border:none;border-radius:var(--r-md);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);white-space:nowrap;box-shadow:var(--shadow-violet);transition:all var(--t);flex-shrink:0;';
+        saveNameBtn.textContent = 'Сохранить';
         saveNameBtn.onclick = async () => {
           if (!nameInput.value.trim()) return;
           await db.collection('chats').doc(chat.id).update({ name: nameInput.value.trim() });
-          Utils.toast('Название обновлено!', 'success');
+          Utils.toast('Название обновлено', 'success');
         };
-        avatarSection.append(nameInput, saveNameBtn);
+        nameWrap.append(nameInput, saveNameBtn);
+        avatarSection.appendChild(nameWrap);
       } else {
         const nameEl = document.createElement('div');
-        nameEl.style.cssText = 'font-size:18px;font-weight:700;margin-top:8px;';
+        nameEl.style.cssText = 'font-size:20px;font-weight:800;letter-spacing:-0.4px;margin-top:8px;';
         nameEl.textContent = chat.name;
         avatarSection.appendChild(nameEl);
       }
@@ -393,8 +467,9 @@ const Chats = {
 
       // Members
       const memberSection = document.createElement('div');
+      memberSection.style.cssText = 'display:flex;flex-direction:column;gap:0;';
       const memberLabel = document.createElement('div'); memberLabel.className = 'section-label';
-      memberLabel.textContent = `Участники (${chat.members.length})`;
+      memberLabel.textContent = `Участники · ${chat.members.length}`;
       memberSection.appendChild(memberLabel);
 
       if (canManage) {
@@ -456,12 +531,11 @@ const Chats = {
 
         // Actions for non-owners
         if (canManage && memberUid !== myUid && role !== 'owner') {
-          const actions = document.createElement('div'); actions.style.display = 'flex'; actions.style.gap = '4px';
+          const actions = document.createElement('div'); actions.style.cssText = 'display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:auto;';
 
           if (myRole === 'owner' || myData.superAdmin) {
             const promoteBtn = document.createElement('button');
-            promoteBtn.className = 'icon-btn'; promoteBtn.style.fontSize = '12px'; promoteBtn.style.width = 'auto';
-            promoteBtn.style.padding = '2px 8px'; promoteBtn.style.borderRadius = '4px'; promoteBtn.style.background = 'var(--accent-light)'; promoteBtn.style.color = 'var(--accent)';
+            promoteBtn.style.cssText = 'padding:5px 12px;background:rgba(139,92,246,0.12);color:var(--violet);border:1.5px solid rgba(139,92,246,0.25);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all 0.15s;white-space:nowrap;';
             promoteBtn.textContent = role === 'admin' ? 'Снять' : 'Админ';
             promoteBtn.title = role === 'admin' ? 'Снять права админа' : 'Сделать админом';
             promoteBtn.onclick = async () => {
@@ -474,8 +548,11 @@ const Chats = {
           }
 
           const kickBtn = document.createElement('button');
-          kickBtn.className = 'icon-btn'; kickBtn.style.fontSize = '12px'; kickBtn.style.color = 'var(--danger)';
-          kickBtn.textContent = '🚪'; kickBtn.title = 'Исключить из группы';
+          kickBtn.title = 'Исключить из группы';
+          kickBtn.style.cssText = 'width:30px;height:30px;border-radius:8px;background:rgba(239,68,68,0.1);border:1.5px solid rgba(239,68,68,0.25);color:var(--danger);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.15s;flex-shrink:0;';
+          kickBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+          kickBtn.onmouseover = () => { kickBtn.style.background = 'rgba(239,68,68,0.22)'; kickBtn.style.borderColor = 'rgba(239,68,68,0.5)'; };
+          kickBtn.onmouseout = () => { kickBtn.style.background = 'rgba(239,68,68,0.1)'; kickBtn.style.borderColor = 'rgba(239,68,68,0.25)'; };
           kickBtn.onclick = async () => {
             if (!confirm(`Исключить ${userData.displayName}?`)) return;
             await this.removeMember(chat.id, memberUid, userData.displayName);
@@ -493,7 +570,7 @@ const Chats = {
       const leaveBtn = document.createElement('button');
       leaveBtn.className = myRole === 'owner' ? 'btn btn-danger' : 'btn btn-secondary';
       leaveBtn.style.marginTop = '8px';
-      leaveBtn.textContent = myRole === 'owner' ? '🗑 Удалить группу' : '🚪 Покинуть группу';
+      leaveBtn.textContent = myRole === 'owner' ? 'Удалить группу' : 'Покинуть группу';
       leaveBtn.onclick = async () => {
         if (myRole === 'owner') {
           if (!confirm('Удалить группу? Это действие необратимо.')) return;
@@ -553,7 +630,7 @@ const Chats = {
       type: 'system',
       text: `${userData && userData.displayName || 'Пользователь'} добавлен(а) в группу`,
       timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      senderId: null,
+      senderId: window.AppState.currentUser.uid,
     });
     window.AppState.currentChatData = { ...window.AppState.currentChatData, members: [...window.AppState.currentChatData.members, uid] };
   },
@@ -568,7 +645,7 @@ const Chats = {
       type: 'system',
       text: `${displayName || 'Пользователь'} исключён(а) из группы`,
       timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      senderId: null,
+      senderId: window.AppState.currentUser.uid,
     });
     window.AppState.currentChatData = {
       ...window.AppState.currentChatData,

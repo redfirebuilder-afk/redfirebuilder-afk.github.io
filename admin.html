@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nyx Admin Panel</title>
+  <link rel="icon" type="image/png" href="assets/icon-192.png">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --violet:#8b5cf6;--pink:#ec4899;
+      --gradient:linear-gradient(135deg,#8b5cf6,#ec4899);
+      --bg:#08080f;--panel:#12121e;--elevated:#1a1a2e;
+      --border:rgba(139,92,246,0.15);--text:#ede9ff;--muted:#9490b8;
+      --success:#22c55e;--danger:#ef4444;--warning:#f59e0b;
+    }
+    body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;}
+    a{color:var(--violet);text-decoration:none;}
+    button{cursor:pointer;border:none;background:none;font-family:'Inter',sans-serif;color:inherit;}
+
+    /* Layout */
+    .admin-layout{display:flex;min-height:100vh;}
+    .admin-sidebar{width:240px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:24px 0;flex-shrink:0;position:sticky;top:0;height:100vh;}
+    .admin-content{flex:1;padding:32px;overflow-y:auto;}
+
+    /* Logo */
+    .admin-logo{display:flex;align-items:center;gap:12px;padding:0 20px 24px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+    .admin-logo-icon{width:40px;height:40px;border-radius:12px;background:var(--gradient);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#fff;}
+    .admin-logo-text{font-size:17px;font-weight:800;letter-spacing:-0.3px;}
+    .admin-logo-sub{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+
+    /* Nav */
+    .admin-nav{display:flex;flex-direction:column;gap:2px;padding:0 10px;}
+    .admin-nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.15s;}
+    .admin-nav-item:hover{background:rgba(139,92,246,0.08);color:var(--text);}
+    .admin-nav-item.active{background:rgba(139,92,246,0.15);color:var(--violet);font-weight:700;}
+    .admin-nav-icon{font-size:17px;width:22px;text-align:center;}
+    .admin-nav-bottom{margin-top:auto;padding:0 10px;}
+    .back-link{display:flex;align-items:center;gap:8px;padding:10px 12px;color:var(--muted);font-size:14px;transition:color 0.15s;}
+    .back-link:hover{color:var(--text);}
+
+    /* Page header */
+    .page-header{margin-bottom:28px;}
+    .page-title{font-size:26px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px;}
+    .page-sub{font-size:14px;color:var(--muted);}
+
+    /* Stats grid */
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:32px;}
+    .stat-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px 24px;transition:all 0.18s;}
+    .stat-card:hover{border-color:var(--violet);box-shadow:0 0 20px rgba(139,92,246,0.1);}
+    .stat-icon{font-size:28px;margin-bottom:8px;}
+    .stat-value{font-size:32px;font-weight:900;letter-spacing:-1px;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .stat-label{font-size:13px;color:var(--muted);font-weight:600;margin-top:2px;}
+
+    /* Tables */
+    .data-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
+    .data-card-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+    .data-card-title{font-size:16px;font-weight:700;}
+    .data-search{padding:8px 14px;background:var(--elevated);border:1px solid var(--border);border-radius:20px;font-size:14px;color:var(--text);font-family:'Inter',sans-serif;width:220px;}
+    .data-search:focus{outline:none;border-color:var(--violet);}
+    .data-table{width:100%;border-collapse:collapse;}
+    .data-table th{padding:12px 16px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;background:var(--elevated);}
+    .data-table td{padding:12px 16px;border-top:1px solid var(--border);font-size:14px;vertical-align:middle;}
+    .data-table tr:hover td{background:rgba(139,92,246,0.04);}
+    .data-table tbody tr:first-child td{border-top:none;}
+
+    /* User row */
+    .user-row-avatar{width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0;display:inline-block;vertical-align:middle;margin-right:10px;}
+    .user-row-avatar img,.user-row-avatar div{width:100%;height:100%;}
+
+    /* Badges */
+    .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+    .badge-online{background:rgba(34,197,94,0.15);color:var(--success);}
+    .badge-offline{background:rgba(148,144,184,0.12);color:var(--muted);}
+    .badge-admin{background:rgba(139,92,246,0.15);color:var(--violet);}
+    .badge-banned{background:rgba(239,68,68,0.15);color:var(--danger);}
+    .badge-channel{background:rgba(139,92,246,0.12);color:var(--violet);}
+    .badge-group{background:rgba(6,182,212,0.12);color:#06b6d4;}
+    .badge-dm{background:rgba(148,144,184,0.1);color:var(--muted);}
+
+    /* Action buttons */
+    .btn-sm{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;transition:all 0.15s;cursor:pointer;border:none;font-family:'Inter',sans-serif;}
+    .btn-danger-sm{background:rgba(239,68,68,0.12);color:var(--danger);}
+    .btn-danger-sm:hover{background:rgba(239,68,68,0.25);}
+    .btn-success-sm{background:rgba(34,197,94,0.12);color:var(--success);}
+    .btn-success-sm:hover{background:rgba(34,197,94,0.25);}
+    .btn-primary-sm{background:rgba(139,92,246,0.15);color:var(--violet);}
+    .btn-primary-sm:hover{background:rgba(139,92,246,0.25);}
+
+    /* Broadcast */
+    .broadcast-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;}
+    .broadcast-card h3{font-size:16px;font-weight:700;margin-bottom:14px;}
+    .broadcast-textarea{width:100%;padding:12px 16px;background:var(--elevated);border:1.5px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);resize:none;font-family:'Inter',sans-serif;min-height:100px;transition:border-color 0.15s;}
+    .broadcast-textarea:focus{outline:none;border-color:var(--violet);}
+    .broadcast-btn{margin-top:12px;padding:12px 28px;background:var(--gradient);color:#fff;border-radius:10px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(139,92,246,0.35);transition:all 0.15s;border:none;cursor:pointer;font-family:'Inter',sans-serif;}
+    .broadcast-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(139,92,246,0.45);}
+
+    /* Section tabs */
+    .section-tabs{display:none;}
+    .admin-section{display:none;}
+    .admin-section.active{display:block;}
+
+    /* Loading */
+    .loading-row td{text-align:center;padding:40px;color:var(--muted);font-size:14px;}
+
+    /* Toast */
+    #admin-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(15,10,30,0.95);color:#ede9ff;padding:11px 22px;border-radius:40px;font-size:14px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid rgba(139,92,246,0.2);display:none;z-index:9999;backdrop-filter:blur(10px);}
+
+    /* Responsive */
+    @media(max-width:768px){.admin-sidebar{display:none}.admin-content{padding:20px}}
+  </style>
+</head>
+<body>
+<div id="admin-toast"></div>
+
+<div id="auth-gate" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;">
+  <div style="width:40px;height:40px;border:3px solid rgba(139,92,246,0.3);border-top-color:#8b5cf6;border-radius:50%;animation:spin 0.7s linear infinite;"></div>
+  <p style="color:var(--muted);font-size:14px;">Проверка доступа...</p>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+<div id="admin-panel" class="admin-layout" style="display:none;">
+  <aside class="admin-sidebar">
+    <div class="admin-logo">
+      <div class="admin-logo-icon">N</div>
+      <div>
+        <div class="admin-logo-text">Nyx</div>
+        <div class="admin-logo-sub">Admin Panel</div>
+      </div>
+    </div>
+    <nav class="admin-nav">
+      <div class="admin-nav-item active" onclick="showSection('dashboard')"><span class="admin-nav-icon">📊</span> Дашборд</div>
+      <div class="admin-nav-item" onclick="showSection('users')"><span class="admin-nav-icon">👥</span> Пользователи</div>
+      <div class="admin-nav-item" onclick="showSection('chats')"><span class="admin-nav-icon">💬</span> Чаты</div>
+      <div class="admin-nav-item" onclick="showSection('broadcast')"><span class="admin-nav-icon">📡</span> Рассылка</div>
+      <div class="admin-nav-item" onclick="showSection('reports')"><span class="admin-nav-icon">⚑</span> Жалобы</div>
+      <div class="admin-nav-item" onclick="showSection('moderators')"><span class="admin-nav-icon">🛡</span> Модераторы</div>
+    </nav>
+    <div class="admin-nav-bottom">
+      <a href="index.html" class="back-link">← Вернуться в Nyx</a>
+    </div>
+  </aside>
+
+  <main class="admin-content">
+    <!-- DASHBOARD -->
+    <div id="section-dashboard" class="admin-section active">
+      <div class="page-header">
+        <div class="page-title">Дашборд</div>
+        <div class="page-sub">Общая статистика мессенджера</div>
+      </div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-value" id="stat-users">—</div><div class="stat-label">Пользователей</div></div>
+        <div class="stat-card"><div class="stat-icon">💬</div><div class="stat-value" id="stat-chats">—</div><div class="stat-label">Чатов</div></div>
+        <div class="stat-card"><div class="stat-icon">📢</div><div class="stat-value" id="stat-channels">—</div><div class="stat-label">Каналов</div></div>
+        <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value" id="stat-online">—</div><div class="stat-label">Онлайн сейчас</div></div>
+      </div>
+      <div class="data-card">
+        <div class="data-card-header"><div class="data-card-title">Последние регистрации</div></div>
+        <table class="data-table"><thead><tr><th>Пользователь</th><th>Email</th><th>Дата</th><th>Статус</th></tr></thead>
+        <tbody id="recent-users-body"><tr class="loading-row"><td colspan="4">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- USERS -->
+    <div id="section-users" class="admin-section">
+      <div class="page-header">
+        <div class="page-title">Пользователи</div>
+        <div class="page-sub" id="users-count">Загрузка...</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card-header">
+          <div class="data-card-title">Все пользователи</div>
+          <input type="text" class="data-search" id="users-search" placeholder="Поиск по имени или email..." oninput="filterUsers()">
+        </div>
+        <table class="data-table"><thead><tr><th>Пользователь</th><th>@username</th><th>Статус</th><th>Роль</th><th>Действия</th></tr></thead>
+        <tbody id="users-body"><tr class="loading-row"><td colspan="5">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- CHATS -->
+    <div id="section-chats" class="admin-section">
+      <div class="page-header">
+        <div class="page-title">Чаты</div>
+        <div class="page-sub" id="chats-count">Загрузка...</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card-header"><div class="data-card-title">Все чаты</div></div>
+        <table class="data-table"><thead><tr><th>Название</th><th>Тип</th><th>Участников</th><th>Последнее сообщение</th></tr></thead>
+        <tbody id="chats-body"><tr class="loading-row"><td colspan="4">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- BROADCAST -->
+    <div id="section-broadcast" class="admin-section">
+      <div class="page-header">
+        <div class="page-title">Рассылка</div>
+        <div class="page-sub">Системное сообщение всем пользователям</div>
+      </div>
+      <div class="broadcast-card">
+        <h3>📡 Отправить системное сообщение</h3>
+        <textarea class="broadcast-textarea" id="broadcast-text" placeholder="Введи текст сообщения..."></textarea>
+        <br>
+        <button class="broadcast-btn" onclick="sendBroadcast()">Отправить всем</button>
+      </div>
+    </div>
+
+    <!-- REPORTS -->
+    <div id="section-reports" class="admin-section">
+      <div class="page-header">
+        <div class="page-title">Жалобы</div>
+        <div class="page-sub">Жалобы пользователей, ожидающие рассмотрения</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card-header"><div class="data-card-title">Все жалобы</div></div>
+        <table class="data-table"><thead><tr><th>Тип</th><th>На кого</th><th>Причина</th><th>От кого</th><th>Дата</th><th>Статус</th><th>Действия</th></tr></thead>
+        <tbody id="reports-body"><tr class="loading-row"><td colspan="7">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- MODERATORS -->
+    <div id="section-moderators" class="admin-section">
+      <div class="page-header">
+        <div class="page-title">Модераторы</div>
+        <div class="page-sub">Управление ролями пользователей</div>
+      </div>
+      <div class="data-card" style="margin-bottom:20px;">
+        <div class="data-card-header"><div class="data-card-title">Назначить роль</div></div>
+        <div style="padding:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <input type="text" class="data-search" id="mod-search" placeholder="Поиск пользователя..." style="width:220px;" oninput="searchModerators()">
+          <select id="mod-role-select" style="background:var(--elevated);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text);">
+            <option value="moderator">Модератор</option>
+            <option value="support">Поддержка</option>
+            <option value="editor">Редактор</option>
+            <option value="none">Снять роль</option>
+          </select>
+          <button class="btn-sm btn-primary-sm" onclick="assignRole()" style="padding:9px 18px;font-size:14px;">Назначить</button>
+        </div>
+        <div id="mod-search-results" style="padding:0 16px 12px;"></div>
+      </div>
+      <div class="data-card">
+        <div class="data-card-header"><div class="data-card-title">Текущие модераторы</div></div>
+        <table class="data-table"><thead><tr><th>Пользователь</th><th>Роль</th><th>Назначен</th><th>Действия</th></tr></thead>
+        <tbody id="mods-body"><tr class="loading-row"><td colspan="4">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="js/config.js"></script>
+<script>
+const SUPER_ADMIN_EMAILS_ADMIN = ['maksmlrd@gmail.com', 'maxxxxwww@gmail.com'];
+let allUsers = [], allChats = [], allChannels = [];
+
+function showToast(msg, type = '') {
+  const el = document.getElementById('admin-toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background = type === 'error' ? 'rgba(153,27,27,0.95)' : type === 'success' ? 'rgba(22,101,52,0.95)' : 'rgba(15,10,30,0.95)';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function showSection(name) {
+  document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+  document.querySelectorAll('.admin-nav-item').forEach(n => n.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  if (name === 'users' && !allUsers.length) loadUsers();
+  if (name === 'chats' && !allChats.length) loadChats();
+  if (name === 'reports') loadReports();
+  if (name === 'moderators') loadModerators();
+}
+
+auth.onAuthStateChanged(async user => {
+  if (!user) { location.href = 'index.html'; return; }
+  const doc = await db.collection('users').doc(user.uid).get();
+  if (!doc.exists || !doc.data().superAdmin) {
+    document.getElementById('auth-gate').innerHTML = '<p style="color:#ef4444;font-size:16px;font-weight:600;">⛔ Нет доступа</p><a href="index.html" style="color:#8b5cf6;margin-top:12px;display:block;">Вернуться</a>';
+    return;
+  }
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('admin-panel').style.display = 'flex';
+  loadDashboard();
+});
+
+async function loadDashboard() {
+  const [usersSnap, chatsSnap, channelsSnap] = await Promise.all([
+    db.collection('users').get(),
+    db.collection('chats').get(),
+    db.collection('channels').get(),
+  ]);
+
+  const online = usersSnap.docs.filter(d => d.data().status === 'online').length;
+  document.getElementById('stat-users').textContent = usersSnap.size;
+  document.getElementById('stat-chats').textContent = chatsSnap.size;
+  document.getElementById('stat-channels').textContent = channelsSnap.size;
+  document.getElementById('stat-online').textContent = online;
+
+  const tbody = document.getElementById('recent-users-body');
+  tbody.innerHTML = '';
+  const recent = usersSnap.docs.sort((a, b) => (b.data().createdAt?.toMillis?.() || 0) - (a.data().createdAt?.toMillis?.() || 0)).slice(0, 10);
+  recent.forEach(d => {
+    const u = d.data();
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escHtml(u.displayName || '—')}</strong></td>
+      <td style="color:var(--muted)">${escHtml(u.email || '—')}</td>
+      <td style="color:var(--muted);font-size:12px">${u.createdAt ? new Date(u.createdAt.toMillis()).toLocaleDateString('ru') : '—'}</td>
+      <td>${u.superAdmin ? '<span class="badge badge-admin">SuperAdmin</span>' : u.banned ? '<span class="badge badge-banned">Забанен</span>' : u.status === 'online' ? '<span class="badge badge-online">Онлайн</span>' : '<span class="badge badge-offline">Офлайн</span>'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadUsers() {
+  const snap = await db.collection('users').get();
+  allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  document.getElementById('users-count').textContent = `${allUsers.length} пользователей`;
+  renderUsers(allUsers);
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById('users-body');
+  tbody.innerHTML = '';
+  users.forEach(u => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    const avatarDiv = `<div style="width:34px;height:34px;border-radius:50%;background:${strToColor(u.uid||'')};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-right:10px;vertical-align:middle;">${(u.displayName||'?')[0].toUpperCase()}</div>`;
+    const roleLabel = u.superAdmin ? '<span class="badge badge-admin">SuperAdmin</span>' 
+      : u.banned ? '<span class="badge badge-banned">Забанен</span>'
+      : (u.role && u.role !== 'user') ? `<span class="badge badge-channel">${u.role}</span>` : '—';
+    tr.innerHTML = `
+      <td>${avatarDiv}<strong>${escHtml(u.displayName||'—')}</strong><br><span style="font-size:12px;color:var(--muted)">${escHtml(u.email||'')}</span></td>
+      <td style="color:var(--violet)">${u.username ? '@'+escHtml(u.username) : '—'}</td>
+      <td>${u.status === 'online' ? '<span class="badge badge-online">Онлайн</span>' : '<span class="badge badge-offline">Офлайн</span>'}</td>
+      <td>${roleLabel}</td>
+      <td onclick="event.stopPropagation()">
+        ${!u.superAdmin ? (u.banned
+          ? `<button class="btn-sm btn-success-sm" onclick="unbanUser('${u.id}','${escHtml(u.displayName||'')}')">Разбанить</button>`
+          : `<button class="btn-sm btn-danger-sm" onclick="banUser('${u.id}','${escHtml(u.displayName||'')}')">Бан</button>`)
+          : '<span style="color:var(--muted);font-size:12px">—</span>'}
+      </td>`;
+    tr.onclick = () => openUserDetail(u);
+    tr.onmouseover = () => tr.style.background = 'rgba(139,92,246,0.06)';
+    tr.onmouseout = () => tr.style.background = '';
+    tbody.appendChild(tr);
+  });
+}
+
+async function openUserDetail(u) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:flex-start;justify-content:flex-end;backdrop-filter:blur(4px);';
+  
+  const panel = document.createElement('div');
+  panel.style.cssText = 'width:420px;height:100vh;background:var(--panel);border-left:1px solid var(--border);overflow-y:auto;animation:slideInRight 0.3s ease;padding:0;';
+  panel.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--muted)">Загрузка...</div>';
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+  const style = document.getElementById('slide-anim') || document.createElement('style');
+  style.id = 'slide-anim';
+  style.textContent = '@keyframes slideInRight{from{transform:translateX(100%)}to{transform:none}}';
+  document.head.appendChild(style);
+
+  // Load chats for this user
+  let chatsSnap, recentMsgs = [];
+  try {
+    chatsSnap = await db.collection('chats').where('members','array-contains',u.uid).get();
+  } catch(e) {
+    chatsSnap = { docs: [] };
+  }
+
+  // Load recent messages — no orderBy to avoid index requirement, sort client-side
+  try {
+    const userChats = chatsSnap.docs.slice(0, 5);
+    for (const chatDoc of userChats) {
+      try {
+        // Only filter by senderId, no orderBy (avoids composite index)
+        const msgs = await chatDoc.ref.collection('messages')
+          .where('senderId', '==', u.uid)
+          .limit(10).get();
+        msgs.forEach(m => recentMsgs.push({
+          ...m.data(),
+          chatId: chatDoc.id,
+          chatName: chatDoc.data().name || 'Личный чат'
+        }));
+      } catch {}
+    }
+    recentMsgs = recentMsgs
+      .sort((a, b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0))
+      .slice(0, 20);
+  } catch {}
+
+  const chats = chatsSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const dmChats = chats.filter(c=>c.type==='dm');
+  const groupChats = chats.filter(c=>c.type==='group');
+
+  // Build contact list (DM partners)
+  const contactUids = [...new Set(dmChats.flatMap(c=>c.members).filter(m=>m!==u.uid))].slice(0,10);
+  const contactDocs = await Promise.all(contactUids.map(uid=>db.collection('users').doc(uid).get()));
+  const contacts = contactDocs.filter(d=>d.exists).map(d=>d.data());
+
+  const lastSeen = u.lastSeen ? new Date(u.lastSeen.toMillis()).toLocaleString('ru') : 'никогда';
+  const joinDate = u.createdAt ? new Date(u.createdAt.toMillis()).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'}) : '—';
+
+  panel.innerHTML = `
+    <div style="padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--panel);z-index:1;">
+      <div style="width:48px;height:48px;border-radius:50%;background:${strToColor(u.uid)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex-shrink:0;">${(u.displayName||'?')[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;font-weight:800;">${escHtml(u.displayName||'—')}</div>
+        <div style="font-size:13px;color:var(--muted);">${u.username?'@'+escHtml(u.username):''} · ${escHtml(u.email||'')}</div>
+      </div>
+      <button onclick="this.closest('div[style]').parentElement.parentElement.remove()" style="font-size:18px;color:var(--muted);cursor:pointer;background:none;border:none;padding:4px;">✕</button>
+    </div>
+
+    <div style="padding:20px;display:flex;flex-direction:column;gap:20px;">
+      <!-- Status -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="background:var(--elevated);border-radius:12px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Статус</div>
+          <div style="font-size:14px;font-weight:600;">${u.status==='online'?'<span style="color:#22c55e;">● Онлайн</span>':'<span style="color:var(--muted);">● Офлайн</span>'}</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:12px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Регистрация</div>
+          <div style="font-size:13px;font-weight:600;">${joinDate}</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:12px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Последний онлайн</div>
+          <div style="font-size:13px;font-weight:600;">${lastSeen}</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:12px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Чатов</div>
+          <div style="font-size:20px;font-weight:900;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${chats.length}</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:12px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Личных переписок</div>
+          <div style="font-size:20px;font-weight:900;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${dmChats.length}</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:12px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">В группах</div>
+          <div style="font-size:20px;font-weight:900;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${groupChats.length}</div>
+        </div>
+      </div>
+
+      ${u.bio ? `<div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">О себе</div><div style="font-size:14px;color:var(--text);">${escHtml(u.bio)}</div></div>` : ''}
+
+      <!-- Contacts (DM partners) -->
+      ${contacts.length ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Переписывается с (${contacts.length})</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${contacts.map(c=>`
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--elevated);">
+              <div style="width:32px;height:32px;border-radius:50%;background:${strToColor(c.uid)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">${(c.displayName||'?')[0]}</div>
+              <div>
+                <div style="font-size:13px;font-weight:600;">${escHtml(c.displayName||'—')}</div>
+                <div style="font-size:11px;color:var(--muted);">${c.username?'@'+escHtml(c.username):''} ${c.status==='online'?'· <span style="color:#22c55e;">онлайн</span>':''}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- Groups -->
+      ${groupChats.length ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Группы (${groupChats.length})</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${groupChats.map(c=>`
+            <div style="padding:8px 10px;border-radius:10px;background:var(--elevated);display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:13px;font-weight:600;">${escHtml(c.name||'Группа')}</span>
+              <span style="font-size:11px;color:var(--muted);">${c.members?.length||0} уч.</span>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- Recent messages -->
+      ${recentMsgs.length ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Последние сообщения (7 дней)</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${recentMsgs.map(m=>`
+            <div style="padding:10px 12px;border-radius:10px;background:var(--elevated);border-left:3px solid rgba(139,92,246,0.4);">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:3px;">${escHtml(m.chatName||'Чат')} · ${m.timestamp?new Date(m.timestamp.toMillis()).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+              <div style="font-size:13px;">${escHtml((m.text||'[Медиа]').slice(0,100))}</div>
+            </div>`).join('')}
+        </div>
+      </div>` : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:10px;">Сообщений за последние 7 дней нет</div>'}
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;padding-top:8px;border-top:1px solid var(--border);">
+        ${!u.superAdmin ? (u.banned
+          ? `<button class="btn-sm btn-success-sm" style="flex:1;padding:10px;" onclick="unbanUser('${u.id}','${escHtml(u.displayName||'')}');this.closest('div[style]').parentElement.parentElement.remove();">Разбанить</button>`
+          : `<button class="btn-sm btn-danger-sm" style="flex:1;padding:10px;" onclick="banUser('${u.id}','${escHtml(u.displayName||'')}');this.closest('div[style]').parentElement.parentElement.remove();">Заблокировать</button>`)
+          : ''}
+      </div>
+    </div>`;
+  
+  overlay.appendChild(panel);
+}
+
+function filterUsers() {
+  const q = document.getElementById('users-search').value.toLowerCase();
+  renderUsers(allUsers.filter(u => (u.displayName||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || (u.username||'').toLowerCase().includes(q)));
+}
+
+async function banUser(uid, name) {
+  if (!confirm(`Забанить ${name}?`)) return;
+  await db.collection('users').doc(uid).update({ banned: true, bannedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  showToast(`${name} забанен`, 'success');
+  loadUsers();
+}
+
+async function unbanUser(uid, name) {
+  await db.collection('users').doc(uid).update({ banned: false });
+  showToast(`${name} разбанен`, 'success');
+  loadUsers();
+}
+
+async function loadChats() {
+  const snap = await db.collection('chats').get();
+  allChats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  document.getElementById('chats-count').textContent = `${allChats.length} чатов`;
+  const tbody = document.getElementById('chats-body');
+  tbody.innerHTML = '';
+  allChats.forEach(c => {
+    const isGroup = c.type === 'group';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escHtml(isGroup ? (c.name || 'Группа') : 'Личный чат')}</strong></td>
+      <td>${isGroup ? '<span class="badge badge-group">Группа</span>' : '<span class="badge badge-dm">DM</span>'}</td>
+      <td>${(c.members||[]).length}</td>
+      <td style="color:var(--muted);font-size:13px">${c.lastMessage?.text ? escHtml(c.lastMessage.text.slice(0,50)) : '—'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadChannels() {
+  const snap = await db.collection('channels').get();
+  allChannels = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  document.getElementById('channels-count').textContent = `${allChannels.length} каналов`;
+  const tbody = document.getElementById('channels-body');
+  tbody.innerHTML = '';
+  allChannels.forEach(ch => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escHtml(ch.name||'—')}</strong><br><span style="font-size:12px;color:var(--muted)">${escHtml(ch.description||'')}</span></td>
+      <td>${ch.subscriberCount || 0}</td>
+      <td>${ch.isPublic ? '<span class="badge badge-channel">Публичный</span>' : '<span class="badge badge-offline">Приватный</span>'}</td>
+      <td><button class="btn-sm btn-danger-sm" onclick="deleteChannel('${ch.id}','${escHtml(ch.name||'')}')">Удалить</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function deleteChannel(id, name) {
+  if (!confirm(`Удалить канал «${name}»? Это необратимо.`)) return;
+  await db.collection('channels').doc(id).delete();
+  showToast(`Канал «${name}» удалён`, 'success');
+  loadChannels();
+}
+
+async function sendBroadcast() {
+  const text = document.getElementById('broadcast-text').value.trim();
+  if (!text) { showToast('Введи текст', 'error'); return; }
+  if (!confirm(`Отправить рассылку всем пользователям?\n\n"${text}"`)) return;
+
+  try {
+    await db.collection('broadcasts').add({
+      text,
+      sentBy: auth.currentUser.uid,
+      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    document.getElementById('broadcast-text').value = '';
+    showToast('Рассылка отправлена!', 'success');
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+  }
+}
+
+function escHtml(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function strToColor(s) {
+  const colors = ['#8b5cf6','#ec4899','#3b82f6','#22c55e','#f59e0b','#06b6d4','#ef4444','#a855f7'];
+  let h = 0; for (const c of s) h = c.charCodeAt(0)+((h<<5)-h);
+  return colors[Math.abs(h)%colors.length];
+}
+
+// ---- Reports ----
+async function loadReports() {
+  const tbody = document.getElementById('reports-body');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="7">Загрузка...</td></tr>';
+  let snap;
+  try {
+    // No orderBy — avoids Firestore index requirement, sort client-side
+    snap = await db.collection('reports').limit(200).get();
+  } catch(e) {
+    tbody.innerHTML = `<tr class="loading-row"><td colspan="7" style="color:var(--danger)">Ошибка: ${escHtml(e.message)}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  if (snap.empty) { tbody.innerHTML = '<tr class="loading-row"><td colspan="7">Жалоб нет</td></tr>'; return; }
+  const reportDocs = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  reportDocs.forEach(r => {
+    const id = r.id;
+    const date = r.createdAt ? new Date(r.createdAt.toMillis()).toLocaleDateString('ru') : '—';
+    const statusClass = r.status === 'pending' ? 'badge-channel' : r.status === 'resolved' ? 'badge-online' : 'badge-offline';
+    const statusLabel = {pending:'Ожидает',reviewed:'Рассмотрена',resolved:'Решена',dismissed:'Отклонена'}[r.status] || r.status;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="badge badge-dm">${escHtml(r.targetType||'—')}</span></td>
+      <td><strong>${escHtml(r.targetName||'—')}</strong></td>
+      <td style="font-size:13px;">${escHtml(r.reason||'—')}</td>
+      <td style="color:var(--muted);font-size:13px;">${escHtml(r.reporterName||'—')}</td>
+      <td style="color:var(--muted);font-size:12px;">${date}</td>
+      <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn-sm btn-primary-sm" onclick="reviewReport('${id}')">Рассмотреть</button>
+        <button class="btn-sm btn-success-sm" onclick="resolveReport('${id}','resolved')">Решить</button>
+        <button class="btn-sm btn-danger-sm" onclick="resolveReport('${id}','dismissed')">Отклонить</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function reviewReport(id) {
+  const doc = await db.collection('reports').doc(id).get();
+  const r = doc.data();
+
+  // Build modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  
+  const msgs = (r.context || []);
+  const mediaMessages = msgs.filter(m => m.imageURLs?.length || m.imageURL || m.gifUrl);
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:#12121e;border:1px solid rgba(139,92,246,0.2);border-radius:20px;width:90%;max-width:600px;max-height:85vh;overflow-y:auto;padding:24px;';
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h3 style="font-size:18px;font-weight:800;">Жалоба: ${escHtml(r.targetName||'—')}</h3>
+      <button onclick="this.closest('div[style]').parentElement.remove()" style="font-size:20px;color:#9490b8;cursor:pointer;background:none;border:none;">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
+      <div style="background:#1a1a2e;border-radius:10px;padding:12px;"><div style="font-size:11px;color:#9490b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Тип</div><div style="font-size:14px;font-weight:600;">${escHtml(r.targetType||'—')}</div></div>
+      <div style="background:#1a1a2e;border-radius:10px;padding:12px;"><div style="font-size:11px;color:#9490b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Причина</div><div style="font-size:14px;font-weight:600;">${escHtml(r.reason||'—')}</div></div>
+      <div style="background:#1a1a2e;border-radius:10px;padding:12px;"><div style="font-size:11px;color:#9490b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Жалуется</div><div style="font-size:14px;font-weight:600;">${escHtml(r.reporterName||'—')}</div></div>
+      <div style="background:#1a1a2e;border-radius:10px;padding:12px;"><div style="font-size:11px;color:#9490b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Дата</div><div style="font-size:14px;font-weight:600;">${r.createdAt ? new Date(r.createdAt.toMillis()).toLocaleString('ru') : '—'}</div></div>
+    </div>
+    ${r.comment ? `<div style="background:#1a1a2e;border-radius:10px;padding:14px;margin-bottom:16px;"><div style="font-size:11px;color:#9490b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Комментарий</div><div style="font-size:14px;">${escHtml(r.comment)}</div></div>` : ''}
+    ${msgs.length ? `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:#9490b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Контекст переписки (${msgs.length} сообщений)</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${msgs.map(m => {
+          const urls = m.imageURLs || (m.imageURL ? [m.imageURL] : []);
+          const hasMedia = urls.length > 0 || m.gifUrl;
+          return `<div style="background:#1a1a2e;border-radius:10px;padding:10px 14px;border-left:3px solid rgba(139,92,246,0.4);">
+            <div style="font-size:12px;color:#9490b8;margin-bottom:4px;display:flex;justify-content:space-between;">
+              <span>${escHtml(m.senderName||'—')}</span>
+              <span>${m.timestamp ? new Date(m.timestamp.toMillis?.() || m.timestamp).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}) : ''}</span>
+            </div>
+            ${m.text ? `<div style="font-size:14px;">${escHtml(m.text)}</div>` : ''}
+            ${hasMedia ? `
+              <div style="margin-top:8px;">
+                <button onclick="revealMedia(this, ${JSON.stringify(urls)}, '${m.gifUrl||''}')" 
+                  style="padding:6px 14px;background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">
+                  Вскрыть медиа (${urls.length || 1} файл${urls.length>1?'а':''})
+                </button>
+                <div class="media-reveal-container" style="display:none;margin-top:8px;display:none;gap:8px;flex-wrap:wrap;"></div>
+              </div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+    <div style="display:flex;gap:10px;padding-top:16px;border-top:1px solid rgba(139,92,246,0.15);">
+      <button onclick="resolveReport('${id}','resolved');this.closest('div[style]').parentElement.remove();" style="flex:1;padding:11px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">Нарушение найдено — Решить</button>
+      <button onclick="resolveReport('${id}','dismissed');this.closest('div[style]').parentElement.remove();" style="flex:1;padding:11px;background:rgba(148,144,184,0.1);color:#9490b8;border:1px solid rgba(148,144,184,0.2);border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Нарушений нет — Отклонить</button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+  await db.collection('reports').doc(id).update({ status: 'reviewed' });
+  loadReports();
+}
+
+function revealMedia(btn, urls, gifUrl) {
+  const container = btn.nextElementSibling;
+  container.style.display = 'flex';
+  btn.style.display = 'none';
+  
+  if (gifUrl) {
+    const img = document.createElement('img');
+    img.src = gifUrl;
+    img.style.cssText = 'max-width:200px;border-radius:8px;cursor:pointer;';
+    img.onclick = () => window.open(gifUrl, '_blank');
+    container.appendChild(img);
+  }
+  
+  urls.forEach(url => {
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'max-width:200px;max-height:200px;object-fit:cover;border-radius:8px;cursor:pointer;';
+    img.title = 'Открыть в полном размере';
+    img.onclick = () => window.open(url, '_blank');
+    container.appendChild(img);
+  });
+}
+
+async function resolveReport(id, status) {
+  await db.collection('reports').doc(id).update({ status, resolvedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  showToast(status === 'resolved' ? 'Жалоба решена' : 'Жалоба отклонена', 'success');
+  loadReports();
+}
+
+// ---- Moderators ----
+let selectedModUid = null;
+async function loadModerators() {
+  const tbody = document.getElementById('mods-body');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="4">Загрузка...</td></tr>';
+
+  // Fetch all users, filter client-side — avoids composite index
+  let allDocs = [];
+  try {
+    if (!allUsers.length) await loadUsers();
+    allDocs = allUsers;
+  } catch(e) {
+    tbody.innerHTML = `<tr class="loading-row"><td colspan="4" style="color:var(--danger)">Ошибка: ${escHtml(e.message)}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  const mods = allDocs.filter(u => {
+    if (u.superAdmin) return false;
+    const role = u.role || '';
+    const isMod = u.moderator === true;
+    return isMod || (role && role !== 'user' && role !== '');
+  });
+
+  if (!mods.length) {
+    tbody.innerHTML = '<tr class="loading-row"><td colspan="4">Модераторов нет. Назначь через форму выше.</td></tr>';
+    return;
+  }
+
+  mods.forEach(u => {
+    const role = u.role || (u.moderator ? 'moderator' : 'неизвестно');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:32px;height:32px;border-radius:50%;background:${strToColor(u.uid||'')};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">${(u.displayName||'?')[0].toUpperCase()}</div>
+          <div>
+            <div style="font-weight:600;">${escHtml(u.displayName||'—')}</div>
+            <div style="font-size:12px;color:var(--muted);">${escHtml(u.email||'')}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="badge badge-admin">${escHtml(role)}</span></td>
+      <td style="color:var(--muted);font-size:12px;">${u.roleAssignedAt ? new Date(u.roleAssignedAt.toMillis?.() || u.roleAssignedAt).toLocaleDateString('ru') : '—'}</td>
+      <td><button class="btn-sm btn-danger-sm" onclick="removeRole('${u.id || u.uid}')">Снять роль</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+let modSearchUsers = [];
+async function searchModerators() {
+  const q = document.getElementById('mod-search').value.trim().toLowerCase();
+  const res = document.getElementById('mod-search-results');
+  if (!q) { res.innerHTML = ''; return; }
+  if (!allUsers.length) await loadUsers();
+  const found = allUsers.filter(u => (u.displayName||'').toLowerCase().includes(q)||(u.username||'').toLowerCase().includes(q)).slice(0,5);
+  res.innerHTML = '';
+  found.forEach(u => {
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;';
+    el.innerHTML = `<div style="width:32px;height:32px;border-radius:50%;background:${strToColor(u.uid)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">${(u.displayName||'?')[0]}</div><div><div style="font-size:13px;font-weight:600;">${escHtml(u.displayName||'—')}</div><div style="font-size:11px;color:var(--muted);">${escHtml(u.email||'')}</div></div>`;
+    el.onclick = () => { selectedModUid = u.uid; document.getElementById('mod-search').value = u.displayName; res.innerHTML = ''; };
+    el.onmouseover = () => el.style.background = 'var(--elevated)';
+    el.onmouseout = () => el.style.background = '';
+    res.appendChild(el);
+  });
+}
+
+async function assignRole() {
+  if (!selectedModUid) { showToast('Выбери пользователя', 'error'); return; }
+  const role = document.getElementById('mod-role-select').value;
+  const updates = role === 'none' ? { role: 'user', moderator: false } : { role, moderator: role === 'moderator' };
+  await db.collection('users').doc(selectedModUid).update(updates);
+  showToast(role === 'none' ? 'Роль снята' : `Роль «${role}» назначена`, 'success');
+  selectedModUid = null;
+  document.getElementById('mod-search').value = '';
+  loadModerators();
+}
+
+async function removeRole(uid) {
+  await db.collection('users').doc(uid).update({ role: 'user', moderator: false });
+  showToast('Роль снята', 'success');
+  loadModerators();
+}
+</script>
+</body>
+</html>

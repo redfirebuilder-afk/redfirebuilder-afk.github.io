@@ -79,6 +79,7 @@ const Auth = {
         uid,
         email: user.email.toLowerCase(),
         displayName: user.displayName || user.email.split('@')[0],
+        displayNameLower: (user.displayName || user.email.split('@')[0]).toLowerCase(),
         username: finalUsername,
         photoURL: user.photoURL || null,
         bio: '',

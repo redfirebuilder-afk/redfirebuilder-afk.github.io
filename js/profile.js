@@ -136,7 +136,7 @@ const Profile = {
     wrap.appendChild(el);
   },
 
-  async openUserProfile(uid) {
+  async openUserProfile(uid, fromQR = false) {
     try {
       const doc = await db.collection('users').doc(uid).get();
       if (!doc.exists) { Utils.toast('Пользователь не найден', 'error'); return; }
@@ -202,7 +202,9 @@ const Profile = {
         dmBtn.textContent = '💬 Написать';
         dmBtn.onclick = async () => {
           App.closeModal('user-profile-modal');
-          await Chats.openOrCreateDM(uid, data);
+          // Remove dynamically added modal too
+          document.getElementById('user-profile-modal')?.querySelector('.modal-overlay')?.click?.();
+          await Chats.openOrCreateDM(uid, data, fromQR);
         };
         actions.appendChild(dmBtn);
 
@@ -226,44 +228,53 @@ const Profile = {
   },
 
   async searchUsers(query) {
-    query = query.toLowerCase().trim();
+    query = query.trim();
     if (!query) return [];
 
-    const results = [];
     const myUid = window.AppState.currentUser.uid;
+    const results = new Map(); // uid -> data (dedup)
+    const q = query.toLowerCase().replace(/^@/, '');
 
-    // Search by username
-    if (query.startsWith('@')) {
-      const username = query.slice(1);
-      const doc = await db.collection('usernames').doc(username).get();
+    // 1. Exact username lookup
+    try {
+      const doc = await db.collection('usernames').doc(q).get();
       if (doc.exists && doc.data().uid !== myUid) {
-        const userDoc = await db.collection('users').doc(doc.data().uid).get();
-        if (userDoc.exists) results.push(userDoc.data());
+        const ud = await db.collection('users').doc(doc.data().uid).get();
+        if (ud.exists) results.set(ud.id, ud.data());
       }
-    } else {
-      // Search by username prefix
-      try {
-        const snap = await db.collection('users')
-          .where('username', '>=', query)
-          .where('username', '<=', query + '\uf8ff')
-          .limit(10).get();
-        snap.forEach(d => { if (d.id !== myUid) results.push(d.data()); });
-      } catch {}
+    } catch {}
 
-      // Search by displayName prefix
-      try {
-        const snap2 = await db.collection('users')
-          .orderBy('displayName')
-          .startAt(query)
-          .endAt(query + '\uf8ff')
-          .limit(10).get();
-        snap2.forEach(d => {
-          if (d.id !== myUid && !results.find(u => u.uid === d.id)) results.push(d.data());
-        });
-      } catch {}
-    }
+    // 2. Username prefix search (Firestore range query)
+    try {
+      const snap = await db.collection('users')
+        .where('username', '>=', q)
+        .where('username', '<=', q + '\uf8ff')
+        .limit(15).get();
+      snap.forEach(d => { if (d.id !== myUid) results.set(d.id, d.data()); });
+    } catch {}
 
-    return results;
+    // 3. displayName prefix search (case-insensitive via lowercase field)
+    try {
+      const snap = await db.collection('users')
+        .where('displayNameLower', '>=', q)
+        .where('displayNameLower', '<=', q + '\uf8ff')
+        .limit(15).get();
+      snap.forEach(d => { if (d.id !== myUid) results.set(d.id, d.data()); });
+    } catch {}
+
+    // 4. Fallback: client-side filter from cached users
+    // (picks up any that Firestore missed due to missing index)
+    const queryLower = q.toLowerCase();
+    Object.values(window.AppState.userCache || {}).forEach(u => {
+      if (u.uid === myUid) return;
+      const matchesUsername = (u.username || '').toLowerCase().startsWith(queryLower);
+      const matchesName = (u.displayName || '').toLowerCase().startsWith(queryLower);
+      if ((matchesUsername || matchesName) && !results.has(u.uid)) {
+        results.set(u.uid, u);
+      }
+    });
+
+    return [...results.values()].slice(0, 20);
   },
 
   renderUserResult(userData, onClick) {

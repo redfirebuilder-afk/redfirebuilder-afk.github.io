@@ -1,74 +1,67 @@
 // ============================================
-// APP — Главный файл: инициализация, события
+// APP.JS — Nyx Messenger (main)
 // ============================================
 
 window.AppState = {
-  currentUser: null,
-  currentUserData: null,
-  currentChatId: null,
-  currentChatData: null,
-  userCache: {},
-  unsubscribers: {},
+  currentUser: null, currentUserData: null,
+  currentChatId: null, currentChatData: null,
+  userCache: {}, unsubscribers: {},
+  sidebarTab: 'chats',
 };
 
 const App = {
 
-  // ---- Bootstrap ----
   async init() {
     this.setupTheme();
     this.setupEventListeners();
     Upload.setupDragDrop();
     this.setupPWA();
 
-    // Check for invite code in URL hash
     const hash = location.hash;
     if (hash.startsWith('#invite=')) {
       window.AppState.pendingInviteCode = hash.replace('#invite=', '');
       history.replaceState(null, '', location.pathname);
     }
 
-    // Auth state listener
-    auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        await this.onLogin(user);
-      } else {
-        this.showScreen('auth-screen');
-        this.hideLoading();
-      }
+    auth.onAuthStateChanged(async user => {
+      if (user) await this.onLogin(user);
+      else { this.showScreen('auth-screen'); this.hideLoading(); }
     });
   },
 
   async onLogin(user) {
     window.AppState.currentUser = user;
-
-    // Check banned
     if (await Admin.checkBanned(user.uid)) return;
-
-    // Load user profile
     const userData = await Profile.loadMyProfile();
-    if (!userData) {
-      // No profile doc found (shouldn't happen) — logout
-      await Auth.logout();
-      return;
-    }
-
-    // Update online status
+    if (!userData) { await Auth.logout(); return; }
     Auth.setupOnlineStatus(user.uid);
-
-    // Update sidebar avatar
     Profile.updateSidebarAvatar();
-
-    // Init notifications
     await Notifications.init();
-
-    // Subscribe to chats
     Chats.subscribeChatList();
-
-    // Show app
     this.showScreen('app-screen');
     this.hideLoading();
 
-    // Handle pending invite code
+    // Show admin button for superadmins
+    if (userData.superAdmin) {
+      document.getElementById('admin-panel-btn').style.display = '';
+    }
+
+    // Load user settings
+    const userSettings = await Settings.load();
+
+    // Apply saved .tnyx theme
+    Themes.loadSavedTnyxTheme();
+    window.AppState.userSettings = userSettings;
+
+    // Handle incoming profile link (?nyx=@username)
+    await QR.handleIncomingLink();
+
+    // Handle theme from URL (?applytheme=...)
+    this.handleApplyTheme();
+
+    // Subscribe to broadcasts
+    this.subscribeBroadcasts();
+
     if (window.AppState.pendingInviteCode) {
       const code = window.AppState.pendingInviteCode;
       window.AppState.pendingInviteCode = null;
@@ -76,33 +69,65 @@ const App = {
     }
   },
 
-  // ---- Screens ----
-  showScreen(screenId) {
+  handleApplyTheme() {
+    const params = new URLSearchParams(window.location.search);
+    const themeData = params.get('applytheme');
+    if (!themeData) return;
+    history.replaceState(null, '', location.pathname);
+    try {
+      const t = JSON.parse(decodeURIComponent(atob(themeData)));
+      // Store theme for current session
+      window.AppState.customTheme = t;
+      // Show banner
+      const banner = document.createElement('div');
+      banner.className = 'theme-apply-banner';
+      banner.innerHTML = `
+        <div>
+          <div style="font-size:14px;font-weight:700;">Тема «${Utils.escapeHtml(t.name || 'Без названия')}»</div>
+          <div style="font-size:12px;color:var(--text-muted);">Открыта из Theme Editor</div>
+        </div>
+        <button class="btn btn-primary" style="width:auto;padding:8px 16px;font-size:13px;" id="apply-theme-confirm">Применить</button>
+        <button class="icon-btn" id="apply-theme-dismiss">✕</button>`;
+      document.body.appendChild(banner);
+      document.getElementById('apply-theme-confirm').onclick = () => {
+        Themes.applyFromObject(t);
+        banner.remove();
+        Utils.toast('Тема применена!', 'success');
+      };
+      document.getElementById('apply-theme-dismiss').onclick = () => banner.remove();
+    } catch {}
+  },
+
+  subscribeBroadcasts() {
+    db.collection('broadcasts').orderBy('sentAt', 'desc').limit(1)
+      .onSnapshot(snap => {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            const age = data.sentAt ? Date.now() - data.sentAt.toMillis() : 9999999;
+            if (age < 10000) Utils.toast('📡 ' + data.text, 'default', 6000);
+          }
+        });
+      }, () => {});
+  },
+
+  showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    const screen = document.getElementById(screenId);
-    if (screen) screen.classList.add('active');
+    document.getElementById(id)?.classList.add('active');
   },
 
   hideLoading() {
     const el = document.getElementById('loading-screen');
     el.classList.add('hidden');
-    setTimeout(() => { el.style.display = 'none'; }, 300);
+    setTimeout(() => el.style.display = 'none', 350);
   },
 
-  // ---- Modals ----
-  openModal(modalId) {
-    document.getElementById(modalId).classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+  openModal(id) {
+    document.getElementById(id)?.classList.remove('hidden');
   },
 
-  closeModal(modalId) {
-    document.getElementById(modalId).classList.add('hidden');
-    document.body.style.overflow = '';
-  },
-
-  closeAllModals() {
-    document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
-    document.body.style.overflow = '';
+  closeModal(id) {
+    document.getElementById(id)?.classList.add('hidden');
   },
 
   openLightbox(src) {
@@ -110,443 +135,177 @@ const App = {
     this.openModal('lightbox-modal');
   },
 
-  // ---- Theme ----
+  // Sidebar tab switch
+  switchSidebarTab(tab) {
+    window.AppState.sidebarTab = tab;
+  },
+
+  // Theme
   setupTheme() {
-    const saved = localStorage.getItem('messenger-theme');
+    const saved = localStorage.getItem('nyx-theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light');
-    this.applyTheme(theme);
+    this.applyTheme(saved || (prefersDark ? 'dark' : 'light'));
   },
 
   applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('messenger-theme', theme);
-    document.getElementById('theme-toggle-btn').textContent = theme === 'dark' ? '☀️' : '🌙';
+    localStorage.setItem('nyx-theme', theme);
+    const moon = document.getElementById('theme-icon-moon');
+    const sun = document.getElementById('theme-icon-sun');
+    if (moon) moon.style.display = theme === 'dark' ? 'none' : 'block';
+    if (sun) sun.style.display = theme === 'dark' ? 'block' : 'none';
   },
 
   toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    this.applyTheme(current === 'dark' ? 'light' : 'dark');
+    const cur = document.documentElement.getAttribute('data-theme');
+    this.applyTheme(cur === 'dark' ? 'light' : 'dark');
   },
 
-  // ---- PWA ----
+  // PWA
   setupPWA() {
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      const btn = document.getElementById('pwa-install-btn');
-      btn.classList.add('show');
-      btn.addEventListener('click', async () => {
-        btn.classList.remove('show');
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        deferredPrompt = null;
-        if (outcome === 'accepted') Utils.toast('Приложение установлено! 🎉', 'success');
-      });
+    let deferred;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault(); deferred = e;
+      document.getElementById('pwa-install-btn').classList.add('show');
     });
+    document.getElementById('pwa-install-btn').onclick = async () => {
+      if (!deferred) return;
+      document.getElementById('pwa-install-btn').classList.remove('show');
+      deferred.prompt();
+      const { outcome } = await deferred.userChoice;
+      deferred = null;
+      if (outcome === 'accepted') Utils.toast('Nyx установлен! 🎉', 'success');
+    };
   },
 
-  // ---- Context Menu ----
+  // Poll submit
+
+  // Context menu for messages
   showMessageContextMenu(e, msg, isOwn, isSuperAdmin) {
     const menu = document.getElementById('context-menu');
     menu.innerHTML = '';
-
-    const myUid = window.AppState.currentUser.uid;
     const chatId = window.AppState.currentChatId;
     const chat = window.AppState.currentChatData;
-    const myRole = chat && chat.memberRoles && chat.memberRoles[myUid];
+    const myUid = window.AppState.currentUser.uid;
+    const myRole = chat?.memberRoles?.[myUid];
     const canManage = myRole === 'owner' || myRole === 'admin' || isSuperAdmin;
     const isDeleted = msg.deleted;
 
-    const addItem = (icon, text, action, danger = false) => {
+    const add = (icon, text, fn, danger = false) => {
       const item = document.createElement('div');
       item.className = 'context-item' + (danger ? ' danger' : '');
       item.innerHTML = `<span class="context-icon">${icon}</span>${text}`;
-      item.onclick = () => { menu.classList.add('hidden'); action(); };
+      item.onclick = () => { menu.classList.add('hidden'); fn(); };
       menu.appendChild(item);
     };
 
     if (!isDeleted) {
-      addItem('😊', 'Реакция', (ev) => this.showReactionPicker(e, msg));
-      addItem('↩️', 'Ответить', () => Messages.setReply(msg));
-      if (msg.text) addItem('📋', 'Копировать', () => Utils.copyToClipboard(msg.text));
-      addItem('➡️', 'Переслать', () => Messages.openForwardModal(msg));
-
-      if (isOwn) {
-        if (msg.type !== 'image') addItem('✏️', 'Редактировать', () => Messages.startEditMessage(msg));
-        addItem('🗑', 'Удалить', () => this.confirmDeleteMessage(msg, chatId), true);
+      add('↩', 'Ответить', () => Messages.setReply(msg));
+      if (msg.text) add('⎘', 'Копировать', () => Utils.copyToClipboard(msg.text));
+      add('→', 'Переслать', () => Messages.openForwardModal(msg));
+      add('⚑', 'Пожаловаться', () => Reports.open('message', msg.id, msg.senderName || 'Пользователь', msg.id));
+      if (isOwn && msg.type !== 'image' && msg.type !== 'gif' && msg.type !== 'poll') {
+        add('✏️', 'Редактировать', () => Messages.startEditMessage(msg));
       }
-
-      if (!isOwn && (canManage || isSuperAdmin)) {
-        const divider = document.createElement('div'); divider.className = 'context-divider'; menu.appendChild(divider);
-        addItem('🗑', 'Удалить (Admin)', () => {
-          if (isSuperAdmin) Admin.superDeleteMessage(msg.id, chatId);
+      if (isOwn || canManage) {
+        const div = document.createElement('div'); div.className = 'context-divider'; menu.appendChild(div);
+        add('🗑', isOwn ? 'Удалить' : 'Удалить (Admin)', () => {
+          if (isSuperAdmin && !isOwn) Admin.superDeleteMessage(msg.id, chatId);
           else Messages.deleteMessage(msg.id);
         }, true);
       }
-
       if (canManage || isSuperAdmin) {
-        const isPinned = chat && chat.pinnedMessage && chat.pinnedMessage.messageId === msg.id;
-        addItem(isPinned ? '📌' : '📌', isPinned ? 'Открепить' : 'Закрепить', () => {
+        const isPinned = chat?.pinnedMessage?.messageId === msg.id;
+        add('📌', isPinned ? 'Открепить' : 'Закрепить', () => {
           if (isPinned) Chats.unpinMessage(chatId); else Chats.pinMessage(chatId, msg);
         });
       }
-    } else if (isSuperAdmin) {
-      addItem('📋', 'Копировать (SuperAdmin)', () => Utils.copyToClipboard(msg.text || ''));
+    } else if (isSuperAdmin && msg.text) {
+      add('📋', 'Копировать (Admin)', () => Utils.copyToClipboard(msg.text));
     }
 
-    // Position
-    const x = Math.min(e.clientX, window.innerWidth - 200);
+    const x = Math.min(e.clientX, window.innerWidth - 210);
     const y = Math.min(e.clientY, window.innerHeight - menu.scrollHeight - 10);
     menu.style.left = x + 'px'; menu.style.top = y + 'px';
     menu.classList.remove('hidden');
   },
 
-  confirmDeleteMessage(msg, chatId) {
-    const isOwn = msg.senderId === window.AppState.currentUser.uid;
-    if (isOwn) {
-      if (confirm('Удалить сообщение для всех?')) {
-        Messages.deleteMessage(msg.id, true);
-      }
-    } else {
-      Messages.deleteMessage(msg.id, true);
-    }
-  },
-
-  showReactionPicker(e, msg) {
-    const picker = document.getElementById('reaction-picker');
-    picker.classList.remove('hidden');
-    const x = Math.min(e.clientX, window.innerWidth - 320);
-    const y = Math.max(e.clientY - 70, 10);
-    picker.style.left = x + 'px'; picker.style.top = y + 'px';
-    picker.dataset.messageId = msg.id;
-    picker.dataset.chatId = window.AppState.currentChatId;
-
-    // Store msg ref
-    picker._msg = msg;
-    document.getElementById('context-menu').classList.add('hidden');
-  },
-
-  // ---- Event Listeners ----
-  setupEventListeners() {
-    // Auth tabs
-    document.querySelectorAll('.auth-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.tab + '-form').classList.add('active');
-        Auth.clearError();
-      });
-    });
-
-    // Login
-    document.getElementById('login-btn').addEventListener('click', async () => {
-      const email = document.getElementById('login-email').value.trim();
-      const password = document.getElementById('login-password').value;
-      if (!email || !password) { Auth.showError('Заполни все поля'); return; }
-      try {
-        document.getElementById('login-btn').textContent = 'Входим...';
-        await Auth.loginWithEmail(email, password);
-      } catch (e) {
-        Auth.showError(Auth.getErrorMessage(e.code));
-        document.getElementById('login-btn').textContent = 'Войти';
-      }
-    });
-
-    // Register
-    document.getElementById('register-btn').addEventListener('click', async () => {
-      const name = document.getElementById('reg-name').value.trim();
-      const username = document.getElementById('reg-username').value.trim();
-      const email = document.getElementById('reg-email').value.trim();
-      const password = document.getElementById('reg-password').value;
-      if (!name || !username || !email || !password) { Auth.showError('Заполни все поля'); return; }
-      try {
-        document.getElementById('register-btn').textContent = 'Регистрируем...';
-        await Auth.registerWithEmail(email, password, name, username);
-      } catch (e) {
-        Auth.showError(e.message || Auth.getErrorMessage(e.code));
-        document.getElementById('register-btn').textContent = 'Зарегистрироваться';
-      }
-    });
-
-    // Google Auth
-    document.getElementById('google-login-btn').addEventListener('click', async () => {
-      try { await Auth.loginWithGoogle(); } catch (e) { Auth.showError(Auth.getErrorMessage(e.code)); }
-    });
-    document.getElementById('google-register-btn').addEventListener('click', async () => {
-      try { await Auth.loginWithGoogle(); } catch (e) { Auth.showError(Auth.getErrorMessage(e.code)); }
-    });
-
-    // Enter key on auth inputs
-    ['login-email','login-password'].forEach(id => {
-      document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-btn').click(); });
-    });
-
-    // Logout
-    document.getElementById('logout-btn').addEventListener('click', async () => {
-      if (confirm('Выйти из аккаунта?')) {
-        await Auth.logout();
-        this.showScreen('auth-screen');
-      }
-    });
-
-    // My profile
-    document.getElementById('my-profile-btn').addEventListener('click', () => Profile.openMyProfileModal());
-    document.getElementById('save-profile-btn').addEventListener('click', () => Profile.saveMyProfile());
-    document.getElementById('change-avatar-btn').addEventListener('click', () => {
-      document.getElementById('avatar-input').click();
-    });
-    document.addEventListener('change', (e) => {
-      if (e.target.id === 'avatar-input') Profile.changeAvatar(e.target.files[0]);
-    });
-
-    // Theme toggle
-    document.getElementById('theme-toggle-btn').addEventListener('click', () => this.toggleTheme());
-
-    // Sidebar search
-    const searchInput = document.getElementById('search-input');
-    searchInput.addEventListener('input', Utils.debounce(async (e) => {
-      const q = e.target.value.trim();
-      if (!q) { Chats.renderChatList(Chats.allChats); return; }
-      Chats.filterChatList(q);
-      // Also search users
-      if (q.length >= 2) {
-        const users = await Profile.searchUsers(q);
-        // Show user results below filtered chats
-        // (simplified: just filter chats for now)
-      }
-    }, 300));
-
-    // New chat button
-    document.getElementById('new-chat-btn').addEventListener('click', () => {
-      this.openModal('new-chat-modal');
-      this.setupNewChatModal();
-    });
-
-    // New chat modal tabs
-    document.querySelectorAll('#new-chat-modal .modal-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('#new-chat-modal .modal-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('#new-chat-modal .modal-tab-content').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
-      });
-    });
-
-    // Chat search in chat
-    document.getElementById('search-messages-btn').addEventListener('click', () => {
-      const bar = document.getElementById('chat-search-bar');
-      bar.classList.toggle('hidden');
-      if (!bar.classList.contains('hidden')) document.getElementById('chat-search-input').focus();
-    });
-    document.getElementById('close-search-btn').addEventListener('click', () => {
-      document.getElementById('chat-search-bar').classList.add('hidden');
-      document.getElementById('chat-search-input').value = '';
-    });
-    document.getElementById('chat-search-input').addEventListener('input', Utils.debounce((e) => {
-      const q = e.target.value.trim();
-      if (q.length >= 2) Messages.highlightSearch(q);
-    }, 400));
-
-    // Chat info
-    document.getElementById('chat-info-btn').addEventListener('click', () => Chats.openChatInfo());
-    document.getElementById('chat-header-info').addEventListener('click', () => Chats.openChatInfo());
-
-    // Message input
-    const msgInput = document.getElementById('message-input');
-    msgInput.addEventListener('input', () => {
-      // Auto-resize textarea
-      msgInput.style.height = 'auto';
-      msgInput.style.height = Math.min(msgInput.scrollHeight, 150) + 'px';
-      Messages.updateSendBtn();
-      Messages.handleTypingInput();
-    });
-    msgInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.handleSend();
-      }
-    });
-
-    // Send button
-    document.getElementById('send-btn').addEventListener('click', () => this.handleSend());
-
-    // File input
-    document.getElementById('file-input').addEventListener('change', (e) => {
-      Upload.handleFileSelect(e.target.files);
-      e.target.value = '';
-    });
-
-    // Cancel reply
-    document.getElementById('cancel-reply-btn').addEventListener('click', () => Messages.clearReply());
-
-    // Back button (mobile)
-    document.getElementById('back-btn').addEventListener('click', () => {
-      document.getElementById('sidebar').classList.remove('hidden-mobile');
-      document.getElementById('active-chat').classList.add('hidden');
-      document.getElementById('welcome-screen').style.display = '';
-      window.AppState.currentChatId = null;
-      if (window.AppState.unsubscribers['messages']) {
-        window.AppState.unsubscribers['messages']();
-        delete window.AppState.unsubscribers['messages'];
-      }
-    });
-
-    // Pinned bar click — scroll to pinned message
-    document.getElementById('pinned-bar').addEventListener('click', () => {
-      const chat = window.AppState.currentChatData;
-      if (chat && chat.pinnedMessage && chat.pinnedMessage.messageId) {
-        Messages.scrollToMessage(chat.pinnedMessage.messageId);
-      }
-    });
-
-    // Reaction picker
-    document.getElementById('reaction-picker').addEventListener('click', (e) => {
-      const option = e.target.closest('.reaction-option');
-      if (option) {
-        const emoji = option.dataset.emoji;
-        const picker = document.getElementById('reaction-picker');
-        const msg = picker._msg;
-        if (msg) Messages.toggleReaction(msg, emoji);
-        picker.classList.add('hidden');
-      }
-    });
-
-    // Invite join button
-    document.getElementById('join-invite-btn').addEventListener('click', () => {
-      const code = document.getElementById('invite-code-input').value.trim();
-      if (!code) { Utils.toast('Введи код', 'error'); return; }
-      Chats.joinViaInviteCode(code);
-    });
-
-    // Create group button
-    document.getElementById('create-group-btn').addEventListener('click', () => {
-      const name = document.getElementById('group-name-input').value;
-      const selected = window._selectedGroupMembers || [];
-      const avatarInput = document.getElementById('group-avatar-input');
-      const avatarFile = avatarInput.files[0] || null;
-      Chats.createGroup(name, selected.map(u => u.uid), avatarFile);
-    });
-
-    // Group avatar input
-    document.getElementById('group-avatar-input').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const preview = document.getElementById('group-avatar-preview');
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(file); img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-        preview.innerHTML = ''; preview.appendChild(img);
-      }
-    });
-
-    document.getElementById('group-avatar-preview').addEventListener('click', () => {
-      document.getElementById('group-avatar-input').click();
-    });
-
-    // Forward modal search
-    document.getElementById('forward-search-input').addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase();
-      document.querySelectorAll('#forward-chat-list .user-result').forEach(el => {
-        el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
-    });
-
-    // Close modals on overlay click or X button
-    document.querySelectorAll('.modal').forEach(modal => {
-      modal.querySelector('.modal-overlay')?.addEventListener('click', () => this.closeModal(modal.id));
-      modal.querySelector('.modal-close')?.addEventListener('click', () => this.closeModal(modal.id));
-    });
-
-    // Close context menu & reaction picker on click outside
-    document.addEventListener('click', (e) => {
-      const menu = document.getElementById('context-menu');
-      if (!menu.contains(e.target)) menu.classList.add('hidden');
-      const picker = document.getElementById('reaction-picker');
-      if (!picker.contains(e.target)) picker.classList.add('hidden');
-    });
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        document.getElementById('context-menu').classList.add('hidden');
-        document.getElementById('reaction-picker').classList.add('hidden');
-        // Close topmost modal
-        const modals = [...document.querySelectorAll('.modal:not(.hidden)')];
-        if (modals.length) this.closeModal(modals[modals.length - 1].id);
-      }
-    });
-  },
-
-  // ---- Handle send (normal or edit) ----
+  // Handle send (also edit mode)
   async handleSend() {
     const input = document.getElementById('message-input');
     if (Messages._editingMessageId) {
-      // Edit mode
       const text = input.value.trim();
       if (text) {
         await Messages.editMessage(Messages._editingMessageId, text);
-        input.value = '';
-        input.style.height = 'auto';
-        Messages.clearReply();
-        Messages.updateSendBtn();
+        input.value = ''; input.style.height = 'auto';
+        Messages.clearReply(); Messages.updateSendBtn();
       }
     } else {
       await Messages.sendMessage();
     }
   },
 
-  // ---- New Chat Modal Setup ----
+  // New Chat Modal setup
   setupNewChatModal() {
-    // DM search
     const dmInput = document.getElementById('dm-search-input');
     const dmResults = document.getElementById('dm-search-results');
     dmInput.value = ''; dmResults.innerHTML = '';
-    dmInput.addEventListener('input', Utils.debounce(async (e) => {
-      const q = e.target.value.trim();
+    dmInput.oninput = Utils.debounce(async () => {
+      const q = dmInput.value.trim();
       if (q.length < 2) { dmResults.innerHTML = ''; return; }
       const users = await Profile.searchUsers(q);
       dmResults.innerHTML = '';
-      if (!users.length) {
-        dmResults.innerHTML = '<div style="padding:10px;color:var(--text-secondary);font-size:14px;">Пользователи не найдены</div>';
-        return;
-      }
-      users.forEach(u => {
-        dmResults.appendChild(Profile.renderUserResult(u, async () => {
-          await Chats.openOrCreateDM(u.uid, u);
-        }));
-      });
-    }, 400));
+      if (!users.length) { dmResults.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:14px;">Не найдено</div>'; return; }
+      users.forEach(u => dmResults.appendChild(Profile.renderUserResult(u, async () => { await Chats.openOrCreateDM(u.uid, u); })));
+    }, 400);
 
-    // Group search
     window._selectedGroupMembers = [];
     const groupInput = document.getElementById('group-search-input');
     const groupResults = document.getElementById('group-search-results');
     const selectedEl = document.getElementById('selected-members');
     groupInput.value = ''; groupResults.innerHTML = ''; selectedEl.innerHTML = '';
     document.getElementById('group-name-input').value = '';
-    document.getElementById('group-avatar-preview').innerHTML = '📷<input type="file" id="group-avatar-input" accept="image/*" hidden>';
+    document.getElementById('group-avatar-preview').innerHTML = '📷';
 
-    groupInput.addEventListener('input', Utils.debounce(async (e) => {
-      const q = e.target.value.trim();
-      if (q.length < 2) { groupResults.innerHTML = ''; return; }
+    groupInput.oninput = Utils.debounce(async () => {
+      const q = groupInput.value.trim();
+      if (q.length < 2) { this.renderGroupContactSuggestions(groupResults, selectedEl); return; }
       const users = await Profile.searchUsers(q);
       groupResults.innerHTML = '';
       users.forEach(u => {
-        const alreadySelected = window._selectedGroupMembers.some(s => s.uid === u.uid);
-        if (alreadySelected) return;
+        if (window._selectedGroupMembers.some(s => s.uid === u.uid)) return;
         groupResults.appendChild(Profile.renderUserResult(u, () => {
           window._selectedGroupMembers.push(u);
-          groupResults.innerHTML = '';
-          groupInput.value = '';
+          groupResults.innerHTML = ''; groupInput.value = '';
+          this.renderGroupContactSuggestions(groupResults, selectedEl);
           this.renderSelectedMembers(selectedEl);
         }));
       });
-    }, 400));
+    }, 400);
 
-    // Invite tab
+    this.renderGroupContactSuggestions(groupResults, selectedEl);
     document.getElementById('invite-code-input').value = '';
+  },
+
+  renderGroupContactSuggestions(container, selectedEl) {
+    const myUid = window.AppState.currentUser.uid;
+    const dmChats = Chats.allChats.filter(c => c.type === 'dm');
+    container.innerHTML = '';
+    if (!dmChats.length) return;
+    const label = document.createElement('div'); label.className = 'section-label'; label.textContent = 'Контакты';
+    container.appendChild(label);
+    dmChats.forEach(chat => {
+      const partnerUid = chat.members.find(m => m !== myUid);
+      if (!partnerUid) return;
+      if ((window._selectedGroupMembers || []).some(s => s.uid === partnerUid)) return;
+      const userData = window.AppState.userCache[partnerUid];
+      if (!userData) { Chats.fetchAndCacheUser(partnerUid).then(() => this.renderGroupContactSuggestions(container, selectedEl)); return; }
+      container.appendChild(Profile.renderUserResult(userData, () => {
+        window._selectedGroupMembers.push(userData);
+        this.renderGroupContactSuggestions(container, selectedEl);
+        this.renderSelectedMembers(selectedEl);
+      }));
+    });
   },
 
   renderSelectedMembers(container) {
@@ -554,14 +313,204 @@ const App = {
     (window._selectedGroupMembers || []).forEach((u, i) => {
       const chip = document.createElement('div'); chip.className = 'member-chip';
       chip.innerHTML = `${Utils.escapeHtml(u.displayName)} <button>✕</button>`;
-      chip.querySelector('button').onclick = () => {
-        window._selectedGroupMembers.splice(i, 1);
-        this.renderSelectedMembers(container);
-      };
+      chip.querySelector('button').onclick = () => { window._selectedGroupMembers.splice(i, 1); this.renderSelectedMembers(container); };
       container.appendChild(chip);
+    });
+  },
+
+  // All event listeners
+  setupEventListeners() {
+
+    // Load .tnyx theme file
+    document.getElementById('load-tnyx-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const theme = JSON.parse(ev.target.result);
+          Themes.applyFromObject(theme);
+        } catch (err) {
+          Utils.toast('Ошибка: неверный формат .tnyx файла', 'error');
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = ''; // allow re-selecting same file
+    });
+
+    // Auth tabs
+    document.querySelectorAll('.auth-tab').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab + '-form').classList.add('active');
+        Auth.clearError();
+      };
+    });
+
+    document.getElementById('login-btn').onclick = async () => {
+      const email = document.getElementById('login-email').value.trim();
+      const pass = document.getElementById('login-password').value;
+      if (!email || !pass) { Auth.showError('Заполни все поля'); return; }
+      document.getElementById('login-btn').textContent = 'Входим...';
+      try { await Auth.loginWithEmail(email, pass); }
+      catch (e) { Auth.showError(Auth.getErrorMessage(e.code)); document.getElementById('login-btn').textContent = 'Войти'; }
+    };
+
+    document.getElementById('register-btn').onclick = async () => {
+      const name = document.getElementById('reg-name').value.trim();
+      const username = document.getElementById('reg-username').value.trim();
+      const email = document.getElementById('reg-email').value.trim();
+      const pass = document.getElementById('reg-password').value;
+      if (!name || !username || !email || !pass) { Auth.showError('Заполни все поля'); return; }
+      document.getElementById('register-btn').textContent = 'Создаём...';
+      try { await Auth.registerWithEmail(email, pass, name, username); }
+      catch (e) { Auth.showError(e.message || Auth.getErrorMessage(e.code)); document.getElementById('register-btn').textContent = 'Создать аккаунт'; }
+    };
+
+    document.getElementById('google-login-btn').onclick = async () => { try { await Auth.loginWithGoogle(); } catch (e) { Auth.showError(Auth.getErrorMessage(e.code)); } };
+    document.getElementById('google-register-btn').onclick = async () => { try { await Auth.loginWithGoogle(); } catch (e) { Auth.showError(Auth.getErrorMessage(e.code)); } };
+
+    ['login-email','login-password'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-btn').click(); });
+    });
+
+    document.getElementById('logout-btn').onclick = async () => { if (confirm('Выйти?')) { await Auth.logout(); this.showScreen('auth-screen'); } };
+
+    document.getElementById('clear-cache-btn').onclick = async () => {
+      try {
+        if ('caches' in window) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
+        window.AppState.userCache = {};
+        Utils.toast('Кэш очищен! Перезагрузка...', 'success');
+        setTimeout(() => location.reload(), 1500);
+      } catch (e) { Utils.toast('Ошибка: ' + e.message, 'error'); }
+    };
+
+    document.getElementById('my-profile-btn').onclick = () => Profile.openMyProfileModal();
+    document.getElementById('save-profile-btn').onclick = () => Profile.saveMyProfile();
+    document.getElementById('change-avatar-btn').onclick = () => document.getElementById('avatar-input').click();
+    document.addEventListener('change', e => { if (e.target.id === 'avatar-input') Profile.changeAvatar(e.target.files[0]); });
+
+    document.getElementById('theme-toggle-btn').onclick = () => this.toggleTheme();
+    document.getElementById('settings-btn').onclick = () => Settings.open();
+
+    document.getElementById('search-input').addEventListener('input', Utils.debounce(e => {
+      const q = e.target.value.trim();
+      Chats.filterChatList(q);
+    }, 300));
+
+    document.getElementById('new-chat-btn').onclick = () => {
+      this.openModal('new-chat-modal');
+      this.setupNewChatModal();
+    };
+
+    document.querySelectorAll('#new-chat-modal .modal-tab').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('#new-chat-modal .modal-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('#new-chat-modal .modal-tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+      };
+    });
+
+
+    // Chat search
+    document.getElementById('search-messages-btn').onclick = () => {
+      const bar = document.getElementById('chat-search-bar');
+      bar.classList.toggle('hidden');
+      if (!bar.classList.contains('hidden')) document.getElementById('chat-search-input').focus();
+    };
+    document.getElementById('close-search-btn').onclick = () => { document.getElementById('chat-search-bar').classList.add('hidden'); document.getElementById('chat-search-input').value = ''; };
+    document.getElementById('chat-search-input').addEventListener('input', Utils.debounce(e => { if (e.target.value.trim().length >= 2) Messages.highlightSearch(e.target.value.trim()); }, 400));
+
+    document.getElementById('chat-info-btn').onclick = () => Chats.openChatInfo();
+    document.getElementById('chat-header-info').onclick = () => Chats.openChatInfo();
+
+    // Message input
+    const msgInput = document.getElementById('message-input');
+    msgInput.addEventListener('input', () => {
+      msgInput.style.height = 'auto';
+      msgInput.style.height = Math.min(msgInput.scrollHeight, 150) + 'px';
+      Messages.updateSendBtn(); Messages.handleTypingInput();
+    });
+    msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.handleSend(); } });
+    document.getElementById('send-btn').onclick = () => this.handleSend();
+    document.getElementById('file-input').onchange = e => { Upload.handleFileSelect(e.target.files); e.target.value = ''; };
+    document.getElementById('cancel-reply-btn').onclick = () => Messages.clearReply();
+
+
+    // Back button
+    document.getElementById('back-btn').onclick = () => {
+      document.getElementById('sidebar').classList.remove('hidden-mobile');
+      document.getElementById('active-chat').classList.add('hidden');
+      document.getElementById('welcome-screen').style.display = '';
+      window.AppState.currentChatId = null;
+      Themes.removeTheme();
+      ['messages','typing'].forEach(k => { if (window.AppState.unsubscribers[k]) { window.AppState.unsubscribers[k](); delete window.AppState.unsubscribers[k]; } });
+    };
+
+    document.getElementById('pinned-bar').onclick = () => {
+      const chat = window.AppState.currentChatData;
+      if (chat?.pinnedMessage?.messageId) Messages.scrollToMessage(chat.pinnedMessage.messageId);
+    };
+
+    // Join invite
+    document.getElementById('join-invite-btn').onclick = () => {
+      const code = document.getElementById('invite-code-input').value.trim();
+      if (!code) { Utils.toast('Введи код', 'error'); return; }
+      Chats.joinViaInviteCode(code);
+    };
+
+    // Create group
+    document.getElementById('create-group-btn').onclick = () => {
+      const name = document.getElementById('group-name-input').value;
+      const selected = window._selectedGroupMembers || [];
+      const avatarFile = document.getElementById('group-avatar-input').files[0] || null;
+      Chats.createGroup(name, selected.map(u => u.uid), avatarFile);
+    };
+
+    document.getElementById('group-avatar-input').onchange = e => {
+      const f = e.target.files[0]; if (!f) return;
+      const prev = document.getElementById('group-avatar-preview');
+      const img = document.createElement('img'); img.src = URL.createObjectURL(f); img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;';
+      prev.innerHTML = ''; prev.appendChild(img);
+    };
+    document.getElementById('group-avatar-preview').onclick = () => document.getElementById('group-avatar-input').click();
+
+    document.getElementById('forward-search-input').oninput = e => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#forward-chat-list .user-result').forEach(el => { el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+    };
+
+    // Close modals
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.querySelector('.modal-overlay')?.addEventListener('click', () => this.closeModal(modal.id));
+      modal.querySelector('.modal-close')?.addEventListener('click', () => this.closeModal(modal.id));
+    });
+
+    // Close context menu on click outside
+    document.addEventListener('click', e => {
+      const menu = document.getElementById('context-menu');
+      if (!menu.contains(e.target)) menu.classList.add('hidden');
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        document.getElementById('context-menu').classList.add('hidden');
+document.getElementById('poll-creator').classList.add('hidden');
+        const modals = [...document.querySelectorAll('.modal:not(.hidden)')];
+        if (modals.length) this.closeModal(modals[modals.length - 1].id);
+      }
+    });
+
+    // Group avatar section
+    document.getElementById('group-avatar-section').addEventListener('click', e => {
+      if (e.target === document.getElementById('group-avatar-preview') || e.target.closest('#group-avatar-preview')) {
+        document.getElementById('group-avatar-input').click();
+      }
     });
   },
 };
 
-// ---- Start App ----
 document.addEventListener('DOMContentLoaded', () => App.init());

@@ -203,6 +203,23 @@ const Messages = {
       bubble.appendChild(textEl);
     }
 
+
+    // GIF message
+    if (msg.type === 'gif' && msg.gifUrl) {
+      const gifEl = document.createElement('div'); gifEl.className = 'msg-gif';
+      const gifImg = document.createElement('img'); gifImg.src = msg.gifUrl; gifImg.alt = msg.gifTitle || 'GIF'; gifImg.loading = 'lazy';
+      gifImg.onclick = () => App.openLightbox(msg.gifUrl);
+      gifEl.appendChild(gifImg); bubble.appendChild(gifEl);
+    }
+
+    // Poll message (Polls module removed — show text only)
+    if (msg.type === 'poll' && msg.poll) {
+      const pollNote = document.createElement('div');
+      pollNote.style.cssText = 'font-size:13px;color:var(--text-secondary);font-style:italic;';
+      pollNote.textContent = '📊 ' + (msg.poll.question || 'Опрос');
+      bubble.appendChild(pollNote);
+    }
+
     // Link Preview (if stored or auto-detect)
     if (msg.linkPreview) {
       bubble.appendChild(this.renderLinkPreview(msg.linkPreview));
@@ -224,11 +241,6 @@ const Messages = {
     // Meta (time, read status, edited)
     const meta = this.createMeta(msg, isOwn, isSuperAdmin);
     bubble.appendChild(meta);
-
-    // Reactions
-    if (msg.reactions && Object.keys(msg.reactions).length > 0) {
-      bubble.appendChild(this.renderReactions(msg, myUid));
-    }
 
     wrapper.appendChild(bubble);
 
@@ -291,24 +303,6 @@ const Messages = {
     return el;
   },
 
-  renderReactions(msg, myUid) {
-    const reactionsEl = document.createElement('div'); reactionsEl.className = 'msg-reactions';
-    for (const [emoji, users] of Object.entries(msg.reactions || {})) {
-      if (!users || users.length === 0) continue;
-      const badge = document.createElement('button'); badge.className = 'reaction-badge';
-      if (users.includes(myUid)) badge.classList.add('reacted');
-      badge.innerHTML = `<span>${emoji}</span><span class="reaction-count">${users.length}</span>`;
-      badge.title = users.length + ' реакция';
-      badge.onclick = (e) => { e.stopPropagation(); this.toggleReaction(msg, emoji); };
-      reactionsEl.appendChild(badge);
-    }
-    // Add reaction button
-    const addReaction = document.createElement('button'); addReaction.className = 'reaction-badge';
-    addReaction.textContent = '😊'; addReaction.title = 'Добавить реакцию';
-    addReaction.onclick = (e) => { e.stopPropagation(); App.showReactionPicker(e, msg); };
-    reactionsEl.appendChild(addReaction);
-    return reactionsEl;
-  },
 
   // ---- Send Message ----
   async sendMessage() {
@@ -444,28 +438,6 @@ const Messages = {
     } catch (e) { Utils.toast('Ошибка удаления', 'error'); }
   },
 
-  // ---- React ----
-  async toggleReaction(msg, emoji) {
-    const chatId = window.AppState.currentChatId;
-    const myUid = window.AppState.currentUser.uid;
-    if (!chatId) return;
-
-    const reactions = msg.reactions || {};
-    const users = reactions[emoji] || [];
-    const hasReacted = users.includes(myUid);
-
-    try {
-      if (hasReacted) {
-        await db.collection('chats').doc(chatId).collection('messages').doc(msg.id).update({
-          [`reactions.${emoji}`]: firebase.firestore.FieldValue.arrayRemove(myUid),
-        });
-      } else {
-        await db.collection('chats').doc(chatId).collection('messages').doc(msg.id).update({
-          [`reactions.${emoji}`]: firebase.firestore.FieldValue.arrayUnion(myUid),
-        });
-      }
-    } catch (e) { Utils.toast('Ошибка реакции', 'error'); }
-  },
 
   // ---- Reply ----
   setReply(msg) {
